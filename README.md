@@ -2,7 +2,7 @@
 Code for creating a GPU-accelerated model of the mouse primary visual cortex
 
 ## Current Progress
-- Constructed prototype model "v1_only" with the ~230,000 nodes from the GLIF dataset (did not include LGN or background neurons)
+- Constructed prototype model "v1_only" (see v1_only.ipynb) with the ~230,000 nodes from the GLIF dataset (did not include LGN or background neurons)
 - Added all synaptic connections between each of these v1 neurons (~70,000,000 connections) (did not )
 - Added an initial stimulus to excite node 0
 - Ran a quick simulation (2000 timesteps) and observed runaway/unrealistic excitation in the model 

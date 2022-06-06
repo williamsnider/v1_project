@@ -1,7 +1,11 @@
 # Don't upload massive data file to github
 GLIF Network/*
 *.pickle
-
+*.dll 
+*.exp
+*.lib
+*.pdb 
+*_CODE
 
 ###########################################
 ### Github's python .gitignore template ###

@@ -1,6 +1,7 @@
 # Don't upload massive data file to github
 GLIF Network/*
 *.pickle
+*.pkl
 *.dll 
 *.exp
 *.lib

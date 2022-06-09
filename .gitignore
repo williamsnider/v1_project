@@ -1,5 +1,6 @@
 # Don't upload massive data file to github
 GLIF Network/*
+GLIF_Teeter_et_al_2018/*
 *.pickle
 *.pkl
 *.dll 

@@ -7,11 +7,12 @@ GLIF1 = create_custom_neuron_class(
     sim_code='$(V)+=1/$(C)*($(Isyn)-$(G)*($(V)-$(El)))*DT;',
     threshold_condition_code='$(V)>=$(V_thres)',
     reset_code = '$(V)=$(El);',
+    is_auto_refractory_required=False,
 )
 
 GLIF2 = create_custom_neuron_class(
     "GLIF2",
-    param_names = ["C", "G", "El", "bs"],
+    param_names = ["C", "G", "El", "b_s"],
     var_name_types=[("V", "scalar"),("V_thres", "scalar") ],
     sim_code="""
     $(V)+=1/$(C)*($(Isyn)-$(G)*($(V)-$(El)))*DT;

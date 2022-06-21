@@ -7,7 +7,7 @@ GLIF1 = create_custom_neuron_class(
     sim_code=
     """
     if ($(refractory_count) > 0) {
-        $(V) += 0;
+        $(V) += 0.0;
         $(refractory_count) -= 1;
     }
     else {
@@ -25,16 +25,36 @@ GLIF1 = create_custom_neuron_class(
 
 GLIF2 = create_custom_neuron_class(
     "GLIF2",
-    param_names = ["C", "G", "El", "b_s"],
-    var_name_types=[("V", "scalar"),("V_thres", "scalar") ],
+    param_names = ["C", "G", "El", "a", "b","a_spike", "b_spike", "spike_cut_length", "th_inf"],
+    var_name_types=[("V", "double"), ("refractory_count", "int"), ("th_s", "double")],
     sim_code="""
-    $(V)+=1/$(C)*($(Isyn)-$(G)*($(V)-$(El)))*DT;
-    $(th_s)+=-$(b_s)*$(th_s)*DT;
+    
+    // Voltage
+    if ($(refractory_count) > 0) {
+        $(V) += 0.0;
+    }
+    else {
+        $(V)+=1/$(C)*($(Isyn)-$(G)*($(V)-$(El)))*DT;
+    }
+
+    // Spike component of threshold
+    if ($(refractory_count) == 1) {
+        $(th_s) = $(th_s) * exp(-$(b_spike)*DT) + $(a_spike);
+    }
+    else {
+        $(th_s) = $(th_s) * exp(-$(b_spike)*DT);
+    }
+
+    // Decrement refractory_count by 1; Do not decrement past -1
+    if ($(refractory_count) > -1) {
+        $(refractory_count) -= 1;
+    }
     """,
     threshold_condition_code='$(V) > $(th_inf) + $(th_s)',
     reset_code="""
-    $(th_s) += $(delta) * $(th_s);
-    $(V)= $(El) + $(fv) * ($(V) - $(El)) - $(delta)*$(V);
+    $(V)= $(El) + $(a) * ($(V) - $(El)) + $(b);
+    $(th_s) = $(th_s) * exp(-$(b_spike)*DT);
+    $(refractory_count) = $(spike_cut_length);
     """
 
 

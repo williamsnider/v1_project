@@ -1,6 +1,6 @@
 # Don't upload massive data file to github
 GLIF Network/*
-GLIF_Teeter_et_al_2018/*
+*/GLIF_Teeter_et_al_2018/*
 *.pickle
 *.pkl
 *.dll 
@@ -8,7 +8,7 @@ GLIF_Teeter_et_al_2018/*
 *.lib
 *.pdb 
 *_CODE
-
+*mouse_nwb*
 ###########################################
 ### Github's python .gitignore template ###
 ###########################################

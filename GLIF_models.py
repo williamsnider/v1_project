@@ -1,20 +1,24 @@
-from pygenn.genn_model import GeNNModel, create_custom_neuron_class
+from pygenn.genn_model import create_custom_neuron_class
 
 GLIF1 = create_custom_neuron_class(
     "GLIF1",
-    param_names = ["C", "G", "El", "V_thres", "spike_cut_length"],
+    param_names = ["C", "G", "El", "th_inf", "spike_cut_length"],
     var_name_types=[("V", "scalar"), ("refractory_count", "int")],
     sim_code=
     """
     if ($(refractory_count) > 0) {
         $(V) += 0.0;
-        $(refractory_count) -= 1;
     }
     else {
         $(V)+=1/$(C)*($(Isyn)-$(G)*($(V)-$(El)))*DT;
+        }
+
+    // Decrement refractory_count; Do not decrement past -1
+    if ($(refractory_count) != -1) {
+        $(refractory_count) -= 1;
     }
     """,
-    threshold_condition_code='$(V)>=$(V_thres)',
+    threshold_condition_code='$(V)>=$(th_inf)',
     reset_code = 
     """
     $(V)=$(El);

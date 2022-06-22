@@ -66,7 +66,7 @@ def make_and_save_model(specimen_id, model_type):
         pickle files
     '''
     
-    global start_time #grab start_time from outside this module
+    start_time=time.time() #grab start_time from outside this module
     
     # finding the folder associated with the desired specimen_id 
     for dir in folders:

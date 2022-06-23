@@ -24,7 +24,7 @@ def GLIF_3_refactored(specimen_id, model_type):
     G = 1/config['R_input']
     El = config['El']
     C = config['C']
-    thres = config['th_inf'] * config['coeffs']['th_inf']
+    th_inf = config['th_inf'] * config['coeffs']['th_inf']
     spike_cut_length = config['spike_cut_length']
 
     T = np.empty(num_steps)
@@ -50,7 +50,7 @@ def GLIF_3_refactored(specimen_id, model_type):
         voltage_t1 = voltage_t0 + (inj + np.sum(ASCurrents_t0) - G * (voltage_t0 - El))*dt/C # Linear euler equation
 
         # Threshold
-        threshold_t1 = thres
+        threshold_t1 = th_inf
 
         # ASCurrents
         ASCurrents_t1 = ASCurrents_t0*np.exp(-k * dt)
@@ -62,7 +62,7 @@ def GLIF_3_refactored(specimen_id, model_type):
             voltage_t0 = 0  
 
             # Threshold Reset
-            threshold_t0 = thres
+            threshold_t0 = th_inf
 
             # ASCurrents reset
             new_currents = asc_amp_array

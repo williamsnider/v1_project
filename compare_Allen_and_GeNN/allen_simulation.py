@@ -114,12 +114,14 @@ def load_model_config_stimulus(specimen_id, model_type):
         config = json.load(f)
 
     # Get stimulus dt, as config file's dt is optimization dt
-    dir_name=os.path.join(relative_path, 'mouse_nwb/specimen_'+ str(specimen_id))
-    all_sweeps=ctc.get_ephys_sweeps(specimen_id,  os.path.join(dir_name, 'ephys_sweeps.json'))
-    sweeps=get_sweep_num_by_name(all_sweeps, 'Noise 2')
-    noise2_sweeps = get_sweep_num_by_name(all_sweeps, 'Noise 2')
-    noise2_data=ctc.get_ephys_data(specimen_id, os.path.join(dir_name, 'ephys.nwb')).get_sweep(noise2_sweeps[0])
-    stimulus=noise2_data['stimulus']
-    config['dt']=1./noise2_data['sampling_rate']
+    # dir_name=os.path.join(relative_path, 'mouse_nwb/specimen_'+ str(specimen_id))
+    # all_sweeps=ctc.get_ephys_sweeps(specimen_id,  os.path.join(dir_name, 'ephys_sweeps.json'))
+    # sweeps=get_sweep_num_by_name(all_sweeps, 'Noise 2')
+    # noise2_sweeps = get_sweep_num_by_name(all_sweeps, 'Noise 2')
+    # noise2_data=ctc.get_ephys_data(specimen_id, os.path.join(dir_name, 'ephys.nwb')).get_sweep(noise2_sweeps[0])
+    # stimulus=noise2_data['stimulus']
+    # config['dt']=1./noise2_data['sampling_rate']
+    stimulus = saved_model['stimulus']
+    config['dt'] = np.diff(saved_model['time'][:2])[0]
 
     return saved_model, config, stimulus

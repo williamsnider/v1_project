@@ -7,7 +7,11 @@ from GLIF_models import GLIF3
 from parameters import GLIF_dict
 import numpy as np
 from pathlib import Path
-from utilities import plot_results_and_diff, check_nan_arrays_equal
+from utilities import (
+    plot_results_and_diff,
+    check_nan_arrays_equal,
+    count_unequal_ignoring_nans,
+)
 
 specimen_ids = [474637203]  # , 512322162]
 model_types = ["LIFASC_model"]
@@ -91,10 +95,13 @@ for specimen_id in specimen_ids:
         v_view = pop1.vars["V"].view
         T = np.ones((num_steps, num_neurons)) * units_dict["th_inf"]
         # T_view = pop1.vars["th_s"].view
+        A = np.empty((num_steps, num_neurons, len(units_dict["ASC"])))
+        A_view = pop1.extra_global_params["ASC"].view
         for i in range(num_steps):
             model.step_time()
             pop1.pull_var_from_device("V")
             v[model.timestep - 1, :] = v_view[:]
+            A[model.timestep - 1, :, :] = A_view[:]
             # pop1.pull_var_from_device("th_s")
             # T[model.timestep - 1, :] += T_view[:]
 
@@ -114,4 +121,16 @@ for specimen_id in specimen_ids:
         GeNN = T[mask, :].ravel()
         result = check_nan_arrays_equal(Allen, GeNN)
         print("Are results equal: {}".format(result))
+        plot_results_and_diff(Allen, "Allen", GeNN, "GeNN", t[mask])
+
+        # Plot ASCurrents
+        Allen = saved_model["AScurrents"][mask] * 1e9  # A --> nA
+        GeNN = np.squeeze(A)[mask, :]
+        result = check_nan_arrays_equal(Allen, GeNN)
+        print("Are ASCurrents results equal: {}".format(result))
+        print(
+            "{} values differed between ASCurrents".format(
+                count_unequal_ignoring_nans(Allen, GeNN)
+            )
+        )
         plot_results_and_diff(Allen, "Allen", GeNN, "GeNN", t[mask])

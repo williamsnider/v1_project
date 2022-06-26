@@ -62,7 +62,7 @@ for specimen_id in specimen_ids:
         GLIF = eval(GLIF_dict[model_type])
         GLIF_params = {k: units_dict[k] for k in GLIF.get_param_names()}
         GLIF_init = {
-            k: units_dict[k] for k in ["V", "refractory_count", "th_s", "th_v"]
+            k: units_dict[k] for k in ["V", "refractory_countdown", "th_s", "th_v"]
         }
         model = GeNNModel("double", GLIF_dict[model_type], backend="SingleThreadedCPU")
         model.dT = units_dict["dT"]

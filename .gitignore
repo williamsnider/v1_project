@@ -9,6 +9,8 @@ GLIF Network/*
 *.pdb 
 *_CODE
 *mouse_nwb*
+.DS_STORE
+
 ###########################################
 ### Github's python .gitignore template ###
 ###########################################

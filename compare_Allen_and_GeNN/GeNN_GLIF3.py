@@ -34,7 +34,7 @@ for specimen_id in specimen_ids:
             "dT": config["dt"] * 1e3,  # s -> ms
             "V": config["init_voltage"] * 1e3,  # V -> mV,
             "spike_cut_length": config["spike_cut_length"],
-            "refractory_count": -1,
+            "refractory_countdown": -1,
             "k": 1 / np.array(config["asc_tau_array"]) * 1e-3,  # inverse of s -> ms
             "r": np.array(config["AScurrent_reset_method"]["params"]["r"]),
             "ASC": np.array(config["init_AScurrents"]) * 1e9,  # A -> nA

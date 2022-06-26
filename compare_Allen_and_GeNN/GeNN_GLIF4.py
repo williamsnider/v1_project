@@ -40,7 +40,7 @@ for specimen_id in specimen_ids:
             * 1e3,  # V -> mV
             "b_spike": config["threshold_dynamics_method"]["params"]["b_spike"]
             * 1e-3,  # inverse of s -> ms
-            "refractory_count": -1,
+            "refractory_countdown": -1,
             "k": 1 / np.array(config["asc_tau_array"]) * 1e-3,  # inverse of s -> ms
             "r": np.array(config["AScurrent_reset_method"]["params"]["r"]),
             "ASC": np.array(config["init_AScurrents"]) * 1e9,  # A -> nA

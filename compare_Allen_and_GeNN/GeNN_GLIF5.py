@@ -40,7 +40,7 @@ for specimen_id in specimen_ids:
             * 1e3,  # V -> mV
             "b_spike": config["threshold_dynamics_method"]["params"]["b_spike"]
             * 1e-3,  # inverse of s -> ms
-            "refractory_count": -1,
+            "refractory_countdown": -1,
             "k": 1 / np.array(config["asc_tau_array"]) * 1e-3,  # inverse of s -> ms
             "r": np.array(config["AScurrent_reset_method"]["params"]["r"]),
             "ASC": np.array(config["init_AScurrents"]) * 1e9,  # A -> nA
@@ -49,15 +49,21 @@ for specimen_id in specimen_ids:
             * 1e9,  # A -> nA
             "th_s": 0.0 * 1e3,  # V -> mV
             "th_v": 0.0 * 1e3,  # V -> mV
-            "a_voltage":  config['threshold_dynamics_method']["params"]["a_voltage"] * config["coeffs"]["a"] * 1e-3, # inverse of V -> mV
-            "b_voltage" : config['threshold_dynamics_method']["params"]["b_voltage"] * config["coeffs"]["b"] * 1e-3, # inverse of V -> mV
+            "a_voltage": config["threshold_dynamics_method"]["params"]["a_voltage"]
+            * config["coeffs"]["a"]
+            * 1e-3,  # inverse of V -> mV
+            "b_voltage": config["threshold_dynamics_method"]["params"]["b_voltage"]
+            * config["coeffs"]["b"]
+            * 1e-3,  # inverse of V -> mV
         }
 
         # Add GLIF Class to model
         num_neurons = 1
         GLIF = eval(GLIF_dict[model_type])
         GLIF_params = {k: units_dict[k] for k in GLIF.get_param_names()}
-        GLIF_init = {k: units_dict[k] for k in ["V", "refractory_count", "th_s", "th_v"]}
+        GLIF_init = {
+            k: units_dict[k] for k in ["V", "refractory_count", "th_s", "th_v"]
+        }
         model = GeNNModel("double", GLIF_dict[model_type], backend="SingleThreadedCPU")
         model.dT = units_dict["dT"]
         pop1 = model.add_neuron_population(

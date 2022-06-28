@@ -102,12 +102,18 @@ GLIF3 = create_custom_neuron_class(
     ],
     sim_code="""
     
+    double sum_of_ASC = 0.0;
+    
+    // Sum after spike currents
+    for (int i=0; i<sizeof($(ASC)); i++)
+        sum_of_ASC += $(ASC)[i];
+
     // Voltage
     if ($(refractory_countdown) > 0) {
         $(V) += 0.0;
     }
     else {
-        $(V) += 1/$(C)*($(Isyn)-$(G)*($(V)-$(El)))*DT;
+        $(V)+=1/$(C)*($(Isyn)+sum_of_ASC-$(G)*($(V)-$(El)))*DT;
     }
 
     // ASCurrents
@@ -159,7 +165,7 @@ GLIF4 = create_custom_neuron_class(
         ("r", "scalar*"),
     ],
     sim_code="""
-    double sum_of_ASC 0.0;
+    double sum_of_ASC = 0.0;
     
     // Sum after spike currents
     for (int i=0; i<sizeof($(ASC)); i++)

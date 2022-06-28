@@ -78,8 +78,6 @@ for specimen_id in specimen_ids:
         for k in pop1.extra_global_params.keys():
             pop1.set_extra_global_param(k, units_dict[k])
 
-        # pop1.set_extra_global_param("ASC", )
-        # pop1.extra_global_params
         ### Add current source to model ###
         external_current_source = create_custom_current_source_class(
             class_name="external_current",

@@ -47,7 +47,7 @@ for specimen_id in specimen_ids:
         num_neurons = 1
         GLIF = eval(GLIF_dict[model_type])
         GLIF_params = {k: units_dict[k] for k in GLIF.get_param_names()}
-        GLIF_init = {k: units_dict[k] for k in ["V", "refractory_count"]}
+        GLIF_init = {k: units_dict[k] for k in ["V", "refractory_countdown"]}
         model = GeNNModel("double", GLIF_dict[model_type], backend="SingleThreadedCPU")
         model.dT = units_dict["dT"]
         pop1 = model.add_neuron_population(
@@ -101,6 +101,7 @@ for specimen_id in specimen_ids:
             model.step_time()
             pop1.pull_var_from_device("V")
             v[model.timestep - 1, :] = v_view[:]
+            pop1.pull_extra_global_param_from_device("ASC")
             A[model.timestep - 1, :, :] = A_view[:]
             # pop1.pull_var_from_device("th_s")
             # T[model.timestep - 1, :] += T_view[:]
@@ -114,14 +115,14 @@ for specimen_id in specimen_ids:
         GeNN = v[mask, :].ravel()
         result = check_nan_arrays_equal(Allen, GeNN)
         print("Are results equal: {}".format(result))
-        plot_results_and_diff(Allen, "Allen", GeNN, "GeNN", t[mask])
+        plot_results_and_diff(Allen, "Allen", GeNN, "GeNN", t[mask], "voltage", "mV")
 
         # Plot thresholds
         Allen = saved_model["threshold"][mask] * 1e3
         GeNN = T[mask, :].ravel()
         result = check_nan_arrays_equal(Allen, GeNN)
         print("Are results equal: {}".format(result))
-        plot_results_and_diff(Allen, "Allen", GeNN, "GeNN", t[mask])
+        plot_results_and_diff(Allen, "Allen", GeNN, "GeNN", t[mask], "threshold", "mV")
 
         # Plot ASCurrents
         Allen = saved_model["AScurrents"][mask] * 1e9  # A --> nA
@@ -133,4 +134,4 @@ for specimen_id in specimen_ids:
                 count_unequal_ignoring_nans(Allen, GeNN)
             )
         )
-        plot_results_and_diff(Allen, "Allen", GeNN, "GeNN", t[mask])
+        plot_results_and_diff(Allen, "Allen", GeNN, "GeNN", t[mask], "ASCurrents", "nA")

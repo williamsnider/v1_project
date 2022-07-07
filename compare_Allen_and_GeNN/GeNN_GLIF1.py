@@ -62,6 +62,7 @@ def get_units_dict(model_type, config):
             "asc_amp_array": np.array(config["asc_amp_array"])
             * np.array(config["coeffs"]["asc_amp_array"])
             * 1e9,  # A -> nA
+            "ASC_length": len(config["init_AScurrents"]),
         }
 
     elif model_type == "LIFRASC_model":
@@ -88,6 +89,7 @@ def get_units_dict(model_type, config):
             * np.array(config["coeffs"]["asc_amp_array"])
             * 1e9,  # A -> nA
             "th_s": config["init_threshold"] * 1e3,  # V -> mV
+            "ASC_length": len(config["init_AScurrents"]),
         }
 
     elif model_type == "LIFRASCAT_model":
@@ -121,6 +123,7 @@ def get_units_dict(model_type, config):
             "b_voltage": config["threshold_dynamics_method"]["params"]["b_voltage"]
             * config["coeffs"]["b"]
             * 1e-3,  # inverse of V -> mV
+            "ASC_length": len(config["init_AScurrents"]),
         }
     else:
         raise NotImplementedError
@@ -256,14 +259,13 @@ if __name__ == "__main__":
 
     # Run GeNN Simulation
     specimen_ids = [474637203]  # , 512322162]
-    model_types = ["LIFASC_model"]
-    # model_types = [
-    #     "LIF_model",
-    #     "LIFR_model",
-    #     "LIFASC_model",
-    #     "LIFRASC_model",
-    #     "LIFRASCAT_model",
-    # ]
+    model_types = [
+        "LIF_model",
+        "LIFR_model",
+        "LIFASC_model",
+        "LIFRASC_model",
+        "LIFRASCAT_model",
+    ]
 
     for specimen_id in specimen_ids:
         for model_type in model_types:

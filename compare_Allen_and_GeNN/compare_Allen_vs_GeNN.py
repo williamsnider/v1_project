@@ -8,8 +8,8 @@ specimen_ids = [474637203]  # , 512322162]
 model_types = [
     "LIF_model",
     "LIFR_model",
-    # "LIFASC_model",
-    # "LIFRASC_model",
+    "LIFASC_model",
+    "LIFRASC_model",
     "LIFRASCAT_model",
 ]
 

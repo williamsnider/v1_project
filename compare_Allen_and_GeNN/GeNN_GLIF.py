@@ -68,8 +68,6 @@ def get_units_dict(model_type, config):
     elif model_type == "LIFRASC_model":
 
         units_dict = {
-            "C": config["C"] * 1e9,  # F -> nF
-            "G": 1 / config["R_input"] * 1e6,  # S -> uS
             "El": config["El"] * 1e3,  # V -> mV
             "th_inf": config["th_inf"] * config["coeffs"]["th_inf"] * 1e3,  # V -> mV
             "dT": config["dt"] * 1e3,  # s -> ms
@@ -155,7 +153,7 @@ def get_var_list(model_type):
     return var_list
 
 
-def run_GeNN_GLIF(specimen_id, model_type):
+def run_GeNN_GLIF(specimen_id, model_type, num_neurons):
 
     # Load Allen model parameters
     saved_model, config, stimulus = load_model_config_stimulus(specimen_id, model_type)
@@ -164,7 +162,6 @@ def run_GeNN_GLIF(specimen_id, model_type):
     units_dict = get_units_dict(model_type, config)
 
     # Add GLIF Class to model
-    num_neurons = 1
     GLIF = eval(GLIF_dict[model_type])
     GLIF_params = {k: units_dict[k] for k in GLIF.get_param_names()}
     GLIF_init = {k: units_dict[k] for k in get_var_list(model_type)}
@@ -283,7 +280,9 @@ if __name__ == "__main__":
                     print("Already saved GeNN run for {}".format(model))
                     break
             else:
-                data_dict, saved_model = run_GeNN_GLIF(specimen_id, model_type)
+                data_dict, saved_model = run_GeNN_GLIF(
+                    specimen_id, model_type, num_neurons=1
+                )
 
                 # Save results
 
@@ -313,9 +312,9 @@ if __name__ == "__main__":
                 except:
                     Allen = saved_model[var_name_dict[v]][mask, :] * var_scale[v]
 
-                # GeNN = np.squeeze(data_dict[v][mask, :, :])
-                # result = check_nan_arrays_equal(Allen, GeNN)
-                # print("Are results equal: {}".format(result))
-                # plot_results_and_diff(
-                #     Allen, "Allen", GeNN, "GeNN", t[mask], var_name_dict[v], var_unit[v]
-                # )
+                GeNN = np.squeeze(data_dict[v][mask, :, :])
+                result = check_nan_arrays_equal(Allen, GeNN)
+                print("Are results equal: {}".format(result))
+                plot_results_and_diff(
+                    Allen, "Allen", GeNN, "GeNN", t[mask], var_name_dict[v], var_unit[v]
+                )

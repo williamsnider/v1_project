@@ -106,8 +106,8 @@ GLIF3 = create_custom_neuron_class(
     double sum_of_ASC = 0.0;
     
     // Sum after spike currents
-    for (int i=0; i<2; i++)
-        sum_of_ASC += $(ASC)[i];
+    for (int i=0; i<$(ASC_length); i++)
+        sum_of_ASC += $(ASC)[$(id)*(int)$(ASC_length)+i];
 
     // Voltage
     if ($(refractory_countdown) > 0) {

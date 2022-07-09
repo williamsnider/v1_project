@@ -16,7 +16,7 @@ import numpy as np
 import pickle
 from utilities import plot_results_and_diff, check_nan_arrays_equal
 
-specimen_ids = [474637203, 512322162]
+specimen_ids = [474637203, 474637203]
 model_type = "LIFASC_model"
 num_neurons = len(specimen_ids)
 # model_types = [
@@ -58,9 +58,11 @@ pop1 = model.add_neuron_population(
     param_space=GLIF_params,
     var_space=GLIF_init,
 )
+
+
 # Assign extra global parameter values
 for k in pop1.extra_global_params.keys():
-    pop1.set_extra_global_param(k, units_dict[k])
+    pop1.set_extra_global_param(k, all_specimens_unit_dict[k])
 
 # Add current source to model
 external_current_source = create_custom_current_source_class(
@@ -113,21 +115,30 @@ for i in range(num_steps):
     # Collect state variables
     for v in vars_list:
         pop1.pull_var_from_device(v)
-        data_dict[v][model.timestep - 1, :, :] = vars_view_dict[v][:]
+        data = vars_view_dict[v]
+        if data.ndim == 1:
+            data_dict[v][model.timestep - 1, :, 0] = data
+        elif data.ndim == 2:
+            data_dict[v][model.timestep - 1, :, :] = data
+        else:
+            raise NotImplementedError
 
     # Collect extra global parameters
     for v in extra_global_params_list:
         pop1.pull_extra_global_param_from_device(v)
-        data_dict[v][model.timestep - 1, :, :] = extra_global_params_view_dict[v][:]
+        data = extra_global_params_view_dict[v]
+        data_dict[v][model.timestep - 1, :, :] = data.reshape(num_neurons, -1)
 
-    pass
+
 # Add threshold
 if "th_s" in data_dict.keys() and "th_v" in data_dict.keys():
     data_dict["T"] = data_dict["th_s"] + data_dict["th_v"] + units_dict["th_inf"]
 elif "th_s" in data_dict.keys() and "th_v" not in data_dict.keys():
     data_dict["T"] = data_dict["th_s"] + units_dict["th_inf"]
 else:
-    data_dict["T"] = units_dict["th_inf"]
+    num_third_dim = 1
+    data_shape = (num_steps, num_neurons, num_third_dim)
+    data_dict["T"] = units_dict["th_inf"] + np.zeros(data_shape)
 
 # Add ASC if not already in data_dict
 if "ASC" not in data_dict.keys():
@@ -153,8 +164,8 @@ save_name = (
 #     data_dict, saved_model = run_GeNN_GLIF(specimen_id, model_type, num_neurons=1)
 len(specimen_ids)
 # Load results
-with open(save_name, "rb") as f:
-    data_dict, saved_model = pickle.load(f)
+# with open(save_name, "rb") as f:
+#     data_dict, saved_model = pickle.load(f)
 
 # Plot the results
 t = saved_model["time"]
@@ -176,8 +187,12 @@ for v in var_name_dict.keys():
         Allen = saved_model[var_name_dict[v]][mask, :] * var_scale[v]
 
     GeNN = np.squeeze(data_dict[v][mask, :, :])
-    result = check_nan_arrays_equal(Allen, GeNN)
-    print("Are results equal: {}".format(result))
+    # result = check_nan_arrays_equal(Allen, GeNN)
+    # print("Are results equal: {}".format(result))
     plot_results_and_diff(
-        Allen, "Allen", GeNN, "GeNN", t[mask], var_name_dict[v], var_unit[v]
+        Allen, "Allen", GeNN[:, 0], "GeNN 0", t[mask], var_name_dict[v], var_unit[v]
+    )
+
+    plot_results_and_diff(
+        Allen, "Allen", GeNN[:, 1], "GeNN 1", t[mask], var_name_dict[v], var_unit[v]
     )

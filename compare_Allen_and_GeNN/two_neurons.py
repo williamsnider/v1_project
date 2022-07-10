@@ -16,7 +16,7 @@ import numpy as np
 import pickle
 from utilities import plot_results_and_diff, check_nan_arrays_equal
 
-specimen_ids = [474637203, 474637203]
+specimen_ids = [474637203]
 model_type = "LIFASC_model"
 num_neurons = len(specimen_ids)
 # model_types = [
@@ -190,9 +190,9 @@ for v in var_name_dict.keys():
     # result = check_nan_arrays_equal(Allen, GeNN)
     # print("Are results equal: {}".format(result))
     plot_results_and_diff(
-        Allen, "Allen", GeNN[:, 0], "GeNN 0", t[mask], var_name_dict[v], var_unit[v]
+        Allen, "Allen", GeNN, "GeNN 0", t[mask], var_name_dict[v], var_unit[v]
     )
 
     plot_results_and_diff(
-        Allen, "Allen", GeNN[:, 1], "GeNN 1", t[mask], var_name_dict[v], var_unit[v]
+        Allen, "Allen", GeNN, "GeNN 1", t[mask], var_name_dict[v], var_unit[v]
     )

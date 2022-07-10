@@ -257,11 +257,11 @@ if __name__ == "__main__":
     # Run GeNN Simulation
     specimen_ids = [474637203]  # , 512322162]
     model_types = [
-        "LIF_model",
-        "LIFR_model",
+        # "LIF_model",
+        # "LIFR_model",
         "LIFASC_model",
-        "LIFRASC_model",
-        "LIFRASCAT_model",
+        # "LIFRASC_model",
+        # "LIFRASCAT_model",
     ]
 
     for specimen_id in specimen_ids:
@@ -286,12 +286,12 @@ if __name__ == "__main__":
 
                 # Save results
 
-                with open(save_name, "wb") as f:
-                    pickle.dump((data_dict, saved_model), f)
+                # with open(save_name, "wb") as f:
+                #     pickle.dump((data_dict, saved_model), f)
 
-            # Load results
-            with open(save_name, "rb") as f:
-                data_dict, saved_model = pickle.load(f)
+            # # Load results
+            # with open(save_name, "rb") as f:
+            #     data_dict, saved_model = pickle.load(f)
 
             # Plot the results
             t = saved_model["time"]
@@ -313,8 +313,8 @@ if __name__ == "__main__":
                     Allen = saved_model[var_name_dict[v]][mask, :] * var_scale[v]
 
                 GeNN = np.squeeze(data_dict[v][mask, :, :])
-                result = check_nan_arrays_equal(Allen, GeNN)
-                print("Are results equal: {}".format(result))
+                # result = check_nan_arrays_equal(Allen, GeNN)
+                # print("Are results equal: {}".format(result))
                 plot_results_and_diff(
                     Allen, "Allen", GeNN, "GeNN", t[mask], var_name_dict[v], var_unit[v]
                 )

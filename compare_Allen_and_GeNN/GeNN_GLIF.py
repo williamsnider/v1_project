@@ -289,7 +289,7 @@ if __name__ == "__main__":
                     specimen_id, model_type
                 )
                 t = saved_model["time"]
-                mask = np.logical_and(t > 18, t < 18.3)
+                mask = np.logical_and(t > 17.9, t < 18.3)
                 t_mask = t[mask]
                 stimulus = stimulus[mask]
                 data_dict, saved_model = run_GeNN_GLIF(
@@ -302,13 +302,13 @@ if __name__ == "__main__":
                 #     pickle.dump((data_dict, saved_model), f)
 
             # # Load results
-            with open(save_name, "rb") as f:
-                data_dict, saved_model = pickle.load(f)
+            # with open(save_name, "rb") as f:
+            #     data_dict, saved_model = pickle.load(f)
 
             # Plot the results
-            t = saved_model["time"]
-            mask = np.logical_and(t > 18, t < 18.3)
-            t_mask = t[mask]
+            # t = saved_model["time"]
+            # mask = np.logical_and(t > 17.9, t < 18.3)
+            # t_mask = t[mask]
 
             # Voltages
             var_name_dict = {"V": "voltage", "T": "threshold", "ASC": "AScurrents"}
@@ -324,7 +324,7 @@ if __name__ == "__main__":
                 except:
                     Allen = saved_model[var_name_dict[v]][mask, :] * var_scale[v]
 
-                GeNN = np.squeeze(data_dict[v][mask, :, :])
+                GeNN = np.squeeze(data_dict[v])
                 # result = check_nan_arrays_equal(Allen, GeNN)
                 # print("Are results equal: {}".format(result))
                 plot_results_and_diff(

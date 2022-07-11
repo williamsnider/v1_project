@@ -148,7 +148,7 @@ saved_model, _, stimulus = load_model_config_stimulus(first_id, model_type)
 t = saved_model["time"]
 mask = np.logical_and(t > 18, t < 18.3)
 t_mask = t[mask]
-stimulus = stimulus[mask]
+# stimulus = stimulus[mask]
 
 # Run model
 data_dict, saved_model = run_GeNN_GLIF(specimen_ids, model_type, num_neurons, stimulus)

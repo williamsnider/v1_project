@@ -155,13 +155,7 @@ def get_var_list(model_type):
     return var_list
 
 
-def run_GeNN_GLIF(specimen_id, model_type, num_neurons, stimulus):
-
-    # Load Allen model parameters
-    saved_model, config, _ = load_model_config_stimulus(specimen_id, model_type)
-
-    # Read config parameters and convert to correct units
-    units_dict = get_units_dict(model_type, config)
+def run_GeNN_GLIF(units_dict, num_neurons, stimulus):
 
     # Add GLIF Class to model
     GLIF = eval(GLIF_dict[model_type])
@@ -253,7 +247,7 @@ def run_GeNN_GLIF(specimen_id, model_type, num_neurons, stimulus):
         num_third_dim = 2  #
         data_dict["ASC"] = np.zeros((num_steps, num_neurons, num_third_dim))
 
-    return data_dict, saved_model
+    return data_dict
 
 
 if __name__ == "__main__":
@@ -261,11 +255,11 @@ if __name__ == "__main__":
     # Run GeNN Simulation
     specimen_ids = [474637203]  # , 512322162]
     model_types = [
-        # "LIF_model",
-        # "LIFR_model",
-        # "LIFASC_model",
+        "LIF_model",
+        "LIFR_model",
+        "LIFASC_model",
         "LIFRASC_model",
-        # "LIFRASCAT_model",
+        "LIFRASCAT_model",
     ]
 
     for specimen_id in specimen_ids:
@@ -285,16 +279,18 @@ if __name__ == "__main__":
                     break
             else:
 
-                saved_model, _, stimulus = load_model_config_stimulus(
+                # Load Allen model parameters
+                saved_model, config, stimulus = load_model_config_stimulus(
                     specimen_id, model_type
                 )
+
+                # Read config parameters and convert to correct units
+                units_dict = get_units_dict(model_type, config)
                 t = saved_model["time"]
                 mask = np.logical_and(t > 17.9, t < 18.3)
                 t_mask = t[mask]
                 stimulus = stimulus[mask]
-                data_dict, saved_model = run_GeNN_GLIF(
-                    specimen_id, model_type, num_neurons=1, stimulus=stimulus
-                )
+                data_dict = run_GeNN_GLIF(units_dict, num_neurons=1, stimulus=stimulus)
 
                 # Save results
 

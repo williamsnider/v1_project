@@ -1,3 +1,6 @@
+import sys
+
+sys.path.append("..")  # TODO: Come up with a better way to handle the imports
 from GeNN_GLIF import (
     load_model_config_stimulus,
     get_units_dict,
@@ -7,9 +10,7 @@ import numpy as np
 from utilities import plot_results_and_diff
 from parameters import GLIF_dict, saved_models
 from pygenn.genn_model import create_custom_current_source_class, GeNNModel
-import sys
 
-sys.path.append("..")  # TODO: Come up with a better way to handle the imports
 from GLIF_models import GLIF1, GLIF2, GLIF3, GLIF4, GLIF5
 
 
@@ -38,7 +39,7 @@ def run_GeNN_GLIF(specimen_ids, model_type, num_neurons, stimulus):
     # Add GLIF Class to model
     GLIF = eval(GLIF_dict[model_type])
     GLIF_params = {k: units_dict[k] for k in GLIF.get_param_names()}
-    GLIF_init = {k: units_dict[k] for k in get_var_list(model_type)}
+    GLIF_init = {k: all_specimens_unit_dict[k] for k in get_var_list(model_type)}
     model = GeNNModel("double", GLIF_dict[model_type], backend="SingleThreadedCPU")
     model.dT = units_dict["dT"]
     pop1 = model.add_neuron_population(
@@ -103,12 +104,19 @@ def run_GeNN_GLIF(specimen_ids, model_type, num_neurons, stimulus):
         # Collect state variables
         for v in vars_list:
             pop1.pull_var_from_device(v)
-            data_dict[v][model.timestep - 1, :, :] = vars_view_dict[v][:]
-
+            data = vars_view_dict[v]
+            # if data[0] != data[1]:
+            #     print("mismatch")
+            if data.ndim == 1:
+                data_dict[v][model.timestep - 1, :, 0] = data
+            elif data.ndim == 2:
+                data_dict[v][model.timestep - 1, :, :] = data
+            else:
+                raise NotImplementedError
         # Collect extra global parameters
         for v in extra_global_params_list:
-            pop1.pull_extra_global_param_from_device(v)
-            data_dict[v][model.timestep - 1, :, :] = extra_global_params_view_dict[v][:]
+            data = extra_global_params_view_dict[v]
+            data_dict[v][model.timestep - 1, :, :] = data.reshape(num_neurons, -1)
 
         pass
     # Add threshold
@@ -131,7 +139,7 @@ def run_GeNN_GLIF(specimen_ids, model_type, num_neurons, stimulus):
 
 # TODO: Add second specimen_id
 specimen_ids = [474637203]  # , 512322162]
-model_type = "LIFASC_model"
+model_type = "LIFRASC_model"
 num_neurons = 1
 
 # Load shortened stimulus
@@ -171,3 +179,10 @@ for v in var_name_dict.keys():
     plot_results_and_diff(
         Allen, "Allen", GeNN, "GeNN", t[mask], var_name_dict[v], var_unit[v]
     )
+    # plot_results_and_diff(
+    #     Allen, "Allen", GeNN[:, 0], "GeNN 0", t[mask], var_name_dict[v], var_unit[v]
+    # )
+
+    # plot_results_and_diff(
+    #     Allen, "Allen", GeNN[:, 1], "GeNN 1", t[mask], var_name_dict[v], var_unit[v]
+    # )

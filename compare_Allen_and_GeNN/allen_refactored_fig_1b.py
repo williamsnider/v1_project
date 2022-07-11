@@ -12,13 +12,13 @@ from parameters import GLIF_dict
 time_range_for_plotting = [18, 18.3]
 specimen_ids = [474637203]  # , 512322162]
 model_types = [
-    "LIF_model",
+    # "LIF_model",
+    # ]
+    #     "LIFR_model",
+    #     "LIFASC_model",
+    "LIFRASC_model",
+    #     "LIFRASCAT_model",
 ]
-#     "LIFR_model",
-#     "LIFASC_model",
-#     "LIFRASC_model",
-#     "LIFRASCAT_model",
-# ]
 time_range = [18, 18.3]
 
 for specimen_id in specimen_ids:
@@ -26,7 +26,7 @@ for specimen_id in specimen_ids:
 
         GLIF_name = GLIF_dict[model_type]
         GLIF = eval(GLIF_name + "_refactored")
-        saved_model, V, thres = GLIF(specimen_id, model_type)
+        saved_model, V, T, A = GLIF(specimen_id, model_type)
 
         t = saved_model["time"]
         mask = np.logical_and(

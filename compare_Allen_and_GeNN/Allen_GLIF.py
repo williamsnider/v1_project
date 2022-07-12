@@ -207,11 +207,11 @@ if __name__ == "__main__":
 
     specimen_ids = [474637203]  # , 512322162]
     model_types = [
-        "LIF_model",
+        # "LIF_model",
         "LIFR_model",
-        "LIFASC_model",
-        "LIFRASC_model",
-        "LIFRASCAT_model",
+        # "LIFASC_model",
+        # "LIFRASC_model",
+        # "LIFRASCAT_model",
     ]
 
     for specimen_id in specimen_ids:
@@ -230,7 +230,7 @@ if __name__ == "__main__":
             Allen_model = make_model(
                 specimen_id, model_type, shortened_stimulus, sampling_rate
             )
-            # save_model(LIF_model)
+            save_model(Allen_model)
 
             var_name_dict = {"V": "voltage", "T": "threshold", "ASC": "AScurrents"}
             var_scale = {"V": 1e3, "T": 1e3, "ASC": 1e9}
@@ -245,9 +245,6 @@ if __name__ == "__main__":
                 except:
                     Allen = Allen_model[var_name_dict[v]] * var_scale[v]
 
-                # GeNN = np.squeeze(data_dict[v])
-                # result = check_nan_arrays_equal(Allen, GeNN)
-                # print("Are results equal: {}".format(result))
                 plot_results_and_diff(
                     Allen,
                     "Allen",

@@ -14,7 +14,6 @@ model_types = [
 ]
 
 num_cols = 4
-t_range = [18, 18.3]
 var_name_dict = {"V": "voltage", "T": "threshold", "ASC": "AScurrents"}
 var_scale = {"V": 1e3, "T": 1e3, "ASC": 1e9}
 var_unit = {"V": "mV", "T": "mV", "ASC": "nA"}
@@ -31,7 +30,6 @@ for specimen_id in specimen_ids:
             GeNN_data_dict, Allen_model = pickle.load(f)
 
         t = Allen_model["time"]
-        mask = np.logical_and(t > 18, t < 18.3)
 
         V_GeNN = np.squeeze(GeNN_data_dict["V"])
         T_GeNN = np.squeeze(GeNN_data_dict["T"])
@@ -46,8 +44,8 @@ for specimen_id in specimen_ids:
             # Overlay of Allen and GeNN Voltage
             if col_num == 0:
 
-                axs[row_num, col_num].plot(t[mask], V_GeNN[mask], label="GeNN")
-                axs[row_num, col_num].plot(t[mask], V_Allen[mask], label="Allen")
+                axs[row_num, col_num].plot(t, V_GeNN, label="GeNN")
+                axs[row_num, col_num].plot(t, V_Allen, label="Allen")
                 axs[row_num, col_num].set_ylabel("{}\nmV".format(GLIF_dict[model_type]))
                 axs[row_num, col_num].legend()
                 if row_num == 0:
@@ -59,7 +57,7 @@ for specimen_id in specimen_ids:
             if col_num == 1:
 
                 diff = V_GeNN - V_Allen
-                axs[row_num, col_num].plot(t[mask], diff[mask], label="diff")
+                axs[row_num, col_num].plot(t, diff, label="diff")
                 axs[row_num, col_num].set_ylabel("mV")
                 axs[row_num, col_num].legend()
                 if row_num == 0:
@@ -71,7 +69,7 @@ for specimen_id in specimen_ids:
             if col_num == 2:
 
                 diff = T_GeNN - T_Allen
-                axs[row_num, col_num].plot(t[mask], diff[mask], label="diff")
+                axs[row_num, col_num].plot(t, diff, label="diff")
                 axs[row_num, col_num].set_ylabel("mV")
                 axs[row_num, col_num].legend()
                 if row_num == 0:
@@ -85,7 +83,7 @@ for specimen_id in specimen_ids:
             if col_num == 3:
 
                 diff = A_GeNN - A_Allen
-                axs[row_num, col_num].plot(t[mask], diff[mask], label="diff")
+                axs[row_num, col_num].plot(t, diff, label="diff")
                 axs[row_num, col_num].set_ylabel("nA")
                 axs[row_num, col_num].legend()
                 if row_num == 0:

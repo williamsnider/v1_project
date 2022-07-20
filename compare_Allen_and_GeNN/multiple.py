@@ -1,5 +1,8 @@
 import sys
 import pickle
+from importlib_metadata import pass_none
+
+from sqlalchemy import all_
 
 sys.path.append("..")  # TODO: Come up with a better way to handle the imports
 from pygenn.genn_model import create_custom_current_source_class, GeNNModel
@@ -43,7 +46,7 @@ def get_units_dict(model_type, config):
             * 1e3,  # V -> mV
             "b_spike": config["threshold_dynamics_method"]["params"]["b_spike"]
             * 1e-3,  # inverse of s -> ms
-            "th_s": config["init_threshold"] * 1e3,  # V -> mV
+            "th_s": 0.0 * 1e3,  # V -> mV
         }
     elif model_type == "LIFASC_model":
 
@@ -88,7 +91,7 @@ def get_units_dict(model_type, config):
             "asc_amp_array": np.array(config["asc_amp_array"])
             * np.array(config["coeffs"]["asc_amp_array"])
             * 1e9,  # A -> nA
-            "th_s": config["init_threshold"] * 1e3,  # V -> mV
+            "th_s": 0.0 * 1e3,  # V -> mV
             "ASC_length": len(config["init_AScurrents"]),
         }
 
@@ -155,26 +158,30 @@ def get_var_list(model_type):
     return var_list
 
 
-def run_GeNN_GLIF(specimen_id, model_type, num_neurons, stimulus):
+def run_GeNN_GLIF(all_specimens_unit_dict, units_dict, num_neurons, stimulus):
 
-    # input_stimulus = stimulus
-    # Load Allen model parameters
-    saved_model, config, stimulus = load_model_config_stimulus(specimen_id, model_type)
+    GLIF = eval(GLIF_dict[model_type])
 
-    # Match input_stimulus with stimulus
-    t = saved_model["time"]
-    mask = np.logical_and(t > 18, t < 18.3)
-    t_mask = t[mask]
-    # stimulus = stimulus[mask]  # TODO: Graphs don't align when stimulus[mask] is used
-    # stimulus_mask == input_stimulus
-
-    # Read config parameters and convert to correct units
-    units_dict = get_units_dict(model_type, config)
+    # # Make units dict with single numerics
+    # units_dict = {}
+    # keys = [k for k in GLIF.get_param_names()]
+    # print(keys)
+    # keys.extend([k for k in get_var_list(model_type)])
+    # print(keys)
+    # for k in keys:
+    #     unit = all_specimens_unit_dict[k]
+    #     if len(unit) == 1:
+    #         pass_none
+    #     else:
+    #         assert np.all(np.diff(unit) == 0.0), "Given parameters not all the same"
+    #     units_dict[k] = unit[
+    #         0
+    #     ]  # Store only first value -- params must be numeric, not list
+    # print(units_dict)
 
     # Add GLIF Class to model
-    GLIF = eval(GLIF_dict[model_type])
     GLIF_params = {k: units_dict[k] for k in GLIF.get_param_names()}
-    GLIF_init = {k: units_dict[k] for k in get_var_list(model_type)}
+    GLIF_init = {k: all_specimens_unit_dict[k] for k in get_var_list(model_type)}
     model = GeNNModel("double", GLIF_dict[model_type], backend="SingleThreadedCPU")
     model.dT = units_dict["dT"]
     pop1 = model.add_neuron_population(
@@ -186,7 +193,7 @@ def run_GeNN_GLIF(specimen_id, model_type, num_neurons, stimulus):
     )
     # Assign extra global parameter values
     for k in pop1.extra_global_params.keys():
-        pop1.set_extra_global_param(k, units_dict[k])
+        pop1.set_extra_global_param(k, all_specimens_unit_dict[k])
 
     # Add current source to model
     external_current_source = create_custom_current_source_class(
@@ -238,102 +245,162 @@ def run_GeNN_GLIF(specimen_id, model_type, num_neurons, stimulus):
         # Collect state variables
         for v in vars_list:
             pop1.pull_var_from_device(v)
-            data_dict[v][model.timestep - 1, :, :] = vars_view_dict[v][:]
-
+            data = vars_view_dict[v]
+            # if data[0] != data[1]:
+            #     print("mismatch")
+            if data.ndim == 1:
+                data_dict[v][model.timestep - 1, :, 0] = data
+            elif data.ndim == 2:
+                data_dict[v][model.timestep - 1, :, :] = data
+            else:
+                raise NotImplementedError
         # Collect extra global parameters
         for v in extra_global_params_list:
-            pop1.pull_extra_global_param_from_device(v)
-            data_dict[v][model.timestep - 1, :, :] = extra_global_params_view_dict[v][:]
+            data = extra_global_params_view_dict[v]
+            data_dict[v][model.timestep - 1, :, :] = data.reshape(num_neurons, -1)
 
-        pass
     # Add threshold
     if "th_s" in data_dict.keys() and "th_v" in data_dict.keys():
         data_dict["T"] = data_dict["th_s"] + data_dict["th_v"] + units_dict["th_inf"]
     elif "th_s" in data_dict.keys() and "th_v" not in data_dict.keys():
         data_dict["T"] = data_dict["th_s"] + units_dict["th_inf"]
     else:
-        data_dict["T"] = units_dict["th_inf"]
+        num_third_dim = 1
+        data_shape = (num_steps, num_neurons, num_third_dim)
+        data_dict["T"] = units_dict["th_inf"] + np.zeros(data_shape)
 
     # Add ASC if not already in data_dict
     if "ASC" not in data_dict.keys():
         num_third_dim = 2  #
         data_dict["ASC"] = np.zeros((num_steps, num_neurons, num_third_dim))
 
-    return data_dict, saved_model
+    return data_dict
 
 
 if __name__ == "__main__":
 
     # Run GeNN Simulation
-    specimen_ids = [474637203]  # , 512322162]
+    specimen_ids = [474637203, 474637203, 474637203, 474637203]  # , 512322162]
     model_types = [
-        # "LIF_model",
-        # "LIFR_model",
-        # "LIFASC_model",
+        "LIF_model",
+        "LIFR_model",
+        "LIFASC_model",
         "LIFRASC_model",
-        # "LIFRASCAT_model",
+        "LIFRASCAT_model",
     ]
 
-    for specimen_id in specimen_ids:
-        for model_type in model_types:
+    import matplotlib.pyplot as plt
 
-            save_name = (
-                "pkl_data/GeNN_" + str(specimen_id) + "_{}.pkl".format(model_type)
-            )
+    fig, axes = plt.subplots(len(model_types), len(specimen_ids))
+    for row_num, model_type in enumerate(model_types):
 
-            for model in saved_models:
+        dummy_id = specimen_ids[0]
+        save_name = "pkl_data/GeNN_" + str(dummy_id) + "_{}.pkl".format(model_type)
 
-                # Skip if model already run and saved
-                if model.startswith("GeNN_" + str(specimen_id)) and model.endswith(
-                    "_{}.pkl".format(model_type)
-                ):
-                    print("Already saved GeNN run for {}".format(model))
-                    break
-            else:
-                saved_model, _, stimulus = load_model_config_stimulus(
-                    specimen_id, model_type
-                )
-                t = saved_model["time"]
-                mask = np.logical_and(t > 18, t < 18.3)
-                t_mask = t[mask]
-                stimulus = stimulus[mask]
-                data_dict, saved_model = run_GeNN_GLIF(
-                    specimen_id, model_type, num_neurons=1, stimulus=stimulus
-                )
-                # Save results
+        # for model in saved_models:
 
-                # with open(save_name, "wb") as f:
-                #     pickle.dump((data_dict, saved_model), f)
+        #     # Skip if model already run and saved
+        #     if model.startswith("GeNN_" + str(dummy_id)) and model.endswith(
+        #         "_{}.pkl".format(model_type)
+        #     ):
+        #         print("Already saved GeNN run for {}".format(model))
+        #         break
+        # else:
 
-            # # Load results
-            # with open(save_name, "rb") as f:
-            #     data_dict, saved_model = pickle.load(f)
+        # Load Allen model parameters
 
-            # Plot the results
-            # t = saved_model["time"]
-            # mask = np.logical_and(t > 18, t < 18.3)
-            # t_mask = t[mask]
+        # units_dict_list = []
+        # for specimen_id in specimen_ids:
+        #     saved_model, config, stimulus = load_model_config_stimulus(
+        #         dummy_id, model_type
+        #     )
+        #     units_dict = get_units_dict(model_type, config)
+        #     units_dict_list.append(units_dict)
 
-            # Voltages
-            var_name_dict = {"V": "voltage", "T": "threshold", "ASC": "AScurrents"}
-            var_scale = {"V": 1e3, "T": 1e3, "ASC": 1e9}
-            var_unit = {"V": "mV", "T": "mV", "ASC": "nA"}
-            for v in var_name_dict.keys():
+        # Load stimulus
+        id_for_stimulus = specimen_ids[0]
+        saved_model, config, stimulus = load_model_config_stimulus(
+            id_for_stimulus, model_type
+        )
 
-                if v not in data_dict.keys():
-                    continue
+        # Group units into single dict
+        all_specimens_unit_dict = {
+            k: [] for k in get_units_dict(model_type, config).keys()
+        }
+        for specimen_id in specimen_ids:
+            _, config, _ = load_model_config_stimulus(specimen_id, model_type)
+            units_dict = get_units_dict(
+                model_type, config
+            )  # TODO: this will be the last units dict
+            for k in all_specimens_unit_dict.keys():
 
-                try:
-                    Allen = saved_model[var_name_dict[v]][mask] * var_scale[v]
-                except:
-                    Allen = saved_model[var_name_dict[v]][mask, :] * var_scale[v]
+                v = units_dict[k]
 
-                try:
-                    GeNN = np.squeeze(data_dict[v][mask, :, :])
-                except:
-                    GeNN = np.squeeze(data_dict[v])
-                result = check_nan_arrays_equal(Allen, GeNN)
-                print("Are results equal: {}".format(result))
-                plot_results_and_diff(
-                    Allen, "Allen", GeNN, "GeNN", t[mask], var_name_dict[v], var_unit[v]
-                )
+                if type(v) == np.ndarray:
+                    v = v.tolist()
+                    all_specimens_unit_dict[k].extend(v)
+                else:
+                    all_specimens_unit_dict[k].append(v)
+
+        # Read config parameters and convert to correct units
+        data_dict = run_GeNN_GLIF(
+            all_specimens_unit_dict,
+            units_dict,
+            num_neurons=len(specimen_ids),
+            stimulus=stimulus,
+        )
+
+        # Save results
+
+        with open(save_name, "wb") as f:
+            pickle.dump((data_dict, saved_model), f)
+
+        # # Load results
+        # with open(save_name, "rb") as f:
+        #     data_dict, saved_model = pickle.load(f)
+
+        t = saved_model["time"]
+
+        # Voltages
+        var_name_dict = {"V": "voltage", "T": "threshold", "ASC": "AScurrents"}
+        var_scale = {"V": 1e3, "T": 1e3, "ASC": 1e9}
+        var_unit = {"V": "mV", "T": "mV", "ASC": "nA"}
+        for v in var_name_dict.keys():
+
+            if v not in data_dict.keys():
+                continue
+
+            try:
+                Allen = saved_model[var_name_dict[v]] * var_scale[v]
+            except:
+                Allen = saved_model[var_name_dict[v]][:] * var_scale[v]
+
+            GeNN = np.squeeze(data_dict[v])
+            # result = check_nan_arrays_equal(Allen, GeNN)
+            # print("Are results equal: {}".format(result))
+            # plot_results_and_diff(
+            #     Allen, "Allen", GeNN[:, 0], "GeNN_0", t, var_name_dict[v], var_unit[v]
+            # )
+
+            # plot_results_and_diff(
+            #     Allen, "Allen", GeNN[:, 1], "GeNN_1", t, var_name_dict[v], var_unit[v]
+            # )
+
+            if v == "V":
+
+                for col_num in range(len(specimen_ids)):
+                    G = GeNN[:, col_num]
+                    axes[row_num, col_num].plot(t, G, label="GeNN_{}".format(col_num))
+                    axes[row_num, col_num].plot(t, Allen, label="Allen")
+                    axes[row_num, col_num].set_ylabel("mV")
+                    axes[row_num, col_num].set_title(
+                        "GeNN_{} and Allen".format(col_num)
+                    )
+                    axes[row_num, col_num].legend()
+                    if col_num == 0:
+                        axes[row_num, col_num].set_ylabel("{}\nmV".format(model_type))
+                    if row_num == len(specimen_ids):
+                        axes[row_num, col_num].set_xlabel("Time (s)")
+
+plt.suptitle("GeNN with Multiple Neurons")
+plt.show()

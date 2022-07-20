@@ -43,7 +43,7 @@ def get_units_dict(model_type, config):
             * 1e3,  # V -> mV
             "b_spike": config["threshold_dynamics_method"]["params"]["b_spike"]
             * 1e-3,  # inverse of s -> ms
-            "th_s": config["init_threshold"] * 1e3,  # V -> mV
+            "th_s": 0.0 * 1e3,  # V -> mV
         }
     elif model_type == "LIFASC_model":
 
@@ -88,7 +88,7 @@ def get_units_dict(model_type, config):
             "asc_amp_array": np.array(config["asc_amp_array"])
             * np.array(config["coeffs"]["asc_amp_array"])
             * 1e9,  # A -> nA
-            "th_s": config["init_threshold"] * 1e3,  # V -> mV
+            "th_s": 0.0 * 1e3,  # V -> mV
             "ASC_length": len(config["init_AScurrents"]),
         }
 
@@ -155,13 +155,7 @@ def get_var_list(model_type):
     return var_list
 
 
-def run_GeNN_GLIF(specimen_id, model_type, num_neurons, stimulus):
-
-    # Load Allen model parameters
-    saved_model, config, _ = load_model_config_stimulus(specimen_id, model_type)
-
-    # Read config parameters and convert to correct units
-    units_dict = get_units_dict(model_type, config)
+def run_GeNN_GLIF(units_dict, num_neurons, stimulus):
 
     # Add GLIF Class to model
     GLIF = eval(GLIF_dict[model_type])
@@ -253,7 +247,7 @@ def run_GeNN_GLIF(specimen_id, model_type, num_neurons, stimulus):
         num_third_dim = 2  #
         data_dict["ASC"] = np.zeros((num_steps, num_neurons, num_third_dim))
 
-    return data_dict, saved_model
+    return data_dict
 
 
 if __name__ == "__main__":
@@ -261,11 +255,11 @@ if __name__ == "__main__":
     # Run GeNN Simulation
     specimen_ids = [474637203]  # , 512322162]
     model_types = [
-        # "LIF_model",
-        # "LIFR_model",
-        # "LIFASC_model",
+        "LIF_model",
+        "LIFR_model",
+        "LIFASC_model",
         "LIFRASC_model",
-        # "LIFRASCAT_model",
+        "LIFRASCAT_model",
     ]
 
     for specimen_id in specimen_ids:
@@ -285,30 +279,25 @@ if __name__ == "__main__":
                     break
             else:
 
-                saved_model, _, stimulus = load_model_config_stimulus(
+                # Load Allen model parameters
+                saved_model, config, stimulus = load_model_config_stimulus(
                     specimen_id, model_type
                 )
-                t = saved_model["time"]
-                mask = np.logical_and(t > 18, t < 18.3)
-                t_mask = t[mask]
-                stimulus = stimulus[mask]
-                data_dict, saved_model = run_GeNN_GLIF(
-                    specimen_id, model_type, num_neurons=1, stimulus=stimulus
-                )
+
+                # Read config parameters and convert to correct units
+                units_dict = get_units_dict(model_type, config)
+                data_dict = run_GeNN_GLIF(units_dict, num_neurons=1, stimulus=stimulus)
 
                 # Save results
 
-                # with open(save_name, "wb") as f:
-                #     pickle.dump((data_dict, saved_model), f)
+                with open(save_name, "wb") as f:
+                    pickle.dump((data_dict, saved_model), f)
 
             # # Load results
-            with open(save_name, "rb") as f:
-                data_dict, saved_model = pickle.load(f)
+            # with open(save_name, "rb") as f:
+            #     data_dict, saved_model = pickle.load(f)
 
-            # Plot the results
             t = saved_model["time"]
-            mask = np.logical_and(t > 18, t < 18.3)
-            t_mask = t[mask]
 
             # Voltages
             var_name_dict = {"V": "voltage", "T": "threshold", "ASC": "AScurrents"}
@@ -320,13 +309,13 @@ if __name__ == "__main__":
                     continue
 
                 try:
-                    Allen = saved_model[var_name_dict[v]][mask] * var_scale[v]
+                    Allen = saved_model[var_name_dict[v]] * var_scale[v]
                 except:
-                    Allen = saved_model[var_name_dict[v]][mask, :] * var_scale[v]
+                    Allen = saved_model[var_name_dict[v]][:] * var_scale[v]
 
-                GeNN = np.squeeze(data_dict[v][mask, :, :])
+                GeNN = np.squeeze(data_dict[v])
                 # result = check_nan_arrays_equal(Allen, GeNN)
                 # print("Are results equal: {}".format(result))
-                plot_results_and_diff(
-                    Allen, "Allen", GeNN, "GeNN", t[mask], var_name_dict[v], var_unit[v]
-                )
+                # plot_results_and_diff(
+                #     Allen, "Allen", GeNN, "GeNN", t, var_name_dict[v], var_unit[v]
+                # )

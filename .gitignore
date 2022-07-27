@@ -10,7 +10,7 @@ GLIF Network/*
 *_CODE
 *mouse_nwb*
 .DS_STORE
-
+.vscode
 ###########################################
 ### Github's python .gitignore template ###
 ###########################################

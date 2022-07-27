@@ -1,5 +1,6 @@
 from pygenn.genn_model import create_custom_neuron_class
 
+
 GLIF1 = create_custom_neuron_class(
     "GLIF1",
     param_names=["C", "G", "El", "th_inf", "spike_cut_length"],
@@ -72,14 +73,6 @@ GLIF2 = create_custom_neuron_class(
     reset_code="""
     $(V)= $(El) + $(a) * ($(V) - $(El)) + $(b);
     
-    // Handle case where spike_cut_length == 0
-    if ($(spike_cut_length) == 0) {
-        $(th_s) = $(th_s) * exp(-$(b_spike)*DT) + $(a_spike);
-    }
-    else {
-        $(th_s) = $(th_s) * exp(-$(b_spike)*DT);
-    }
-
     $(refractory_countdown) = $(spike_cut_length);
     """,
 )
@@ -90,19 +83,11 @@ GLIF3 = create_custom_neuron_class(
         "C",
         "G",
         "El",
-        "a",
-        "b",
-        "a_spike",
-        "b_spike",
         "spike_cut_length",
         "th_inf",
         "ASC_length",
     ],
-    var_name_types=[
-        ("V", "double"),
-        ("refractory_countdown", "int"),
-        ("th_s", "double"),
-    ],
+    var_name_types=[("V", "double"), ("refractory_countdown", "int")],
     extra_global_params=[
         ("ASC", "scalar*"),
         ("k", "scalar*"),
@@ -117,7 +102,6 @@ GLIF3 = create_custom_neuron_class(
         int idx = $(id)*((int)$(ASC_length))+ii;
         sum_of_ASC += $(ASC)[idx];
         }
-
     // Voltage
     if ($(refractory_countdown) > 0) {
         $(V) += 0.0;
@@ -143,7 +127,7 @@ GLIF3 = create_custom_neuron_class(
         $(refractory_countdown) -= 1;
     }
     """,
-    threshold_condition_code="$(V) > $(th_inf) + $(th_s)",
+    threshold_condition_code="$(V) > $(th_inf)",
     reset_code="""
     $(V)=0;
     for (int ii=0; ii<$(ASC_length); ii++){
@@ -154,7 +138,7 @@ GLIF3 = create_custom_neuron_class(
     """,
 )
 
-GLIF4_alt = create_custom_neuron_class(
+GLIF4 = create_custom_neuron_class(
     "GLIF4",
     param_names=[
         "C",
@@ -231,14 +215,6 @@ GLIF4_alt = create_custom_neuron_class(
         int idx = $(id)*((int)$(ASC_length))+ii;
         $(ASC)[idx] = $(asc_amp_array)[idx] + $(ASC)[idx] * $(r)[idx] * exp(-($(k)[idx] * DT * $(spike_cut_length)));
         }
-
-    // Handle case where spike_cut_length == 0
-    if ($(spike_cut_length) == 0) {
-        $(th_s) = $(th_s) * exp(-$(b_spike)*DT) + $(a_spike);
-    }
-    else {
-        $(th_s) = $(th_s) * exp(-$(b_spike)*DT);
-    }
 
     $(refractory_countdown) = $(spike_cut_length);
     """,
@@ -340,13 +316,6 @@ GLIF5 = create_custom_neuron_class(
         int idx = $(id)*((int)$(ASC_length))+ii;
         $(ASC)[idx] = $(asc_amp_array)[idx] + $(ASC)[idx] * $(r)[idx] * exp(-($(k)[idx] * DT * $(spike_cut_length)));
         }
-    // Threshold - spike compoennt - handle case where spike_cut_length == 0
-    if ($(spike_cut_length) == 0) {
-        $(th_s) = $(th_s) * exp(-$(b_spike)*DT) + $(a_spike);
-    }
-    else {
-        $(th_s) = $(th_s) * exp(-$(b_spike)*DT);
-    }
 
     $(refractory_countdown) = $(spike_cut_length);
     """,

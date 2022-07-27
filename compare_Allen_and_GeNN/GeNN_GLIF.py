@@ -155,7 +155,10 @@ def get_var_list(model_type):
     return var_list
 
 
-def run_GeNN_GLIF(units_dict, num_neurons, stimulus):
+def run_GeNN_GLIF(units_dict, num_neurons, stimulus, model_type):
+
+    # Check inputs
+    assert stimulus.dtype == "float64"
 
     # Add GLIF Class to model
     GLIF = eval(GLIF_dict[model_type])
@@ -179,7 +182,8 @@ def run_GeNN_GLIF(units_dict, num_neurons, stimulus):
         class_name="external_current",
         var_name_types=[("current", "double")],
         injection_code="""
-        $(current)=$(Ie)[int($(t) / DT)];
+        int idx = round($(t) / DT);
+        $(current)=$(Ie)[idx];
         $(injectCurrent,$(current) );
         """,
         extra_global_params=[("Ie", "double*")],
@@ -232,6 +236,7 @@ def run_GeNN_GLIF(units_dict, num_neurons, stimulus):
             data_dict[v][model.timestep - 1, :, :] = extra_global_params_view_dict[v][:]
 
         pass
+
     # Add threshold
     if "th_s" in data_dict.keys() and "th_v" in data_dict.keys():
         data_dict["T"] = data_dict["th_s"] + data_dict["th_v"] + units_dict["th_inf"]
@@ -270,13 +275,13 @@ if __name__ == "__main__":
             )
 
             for model in saved_models:
-
+                pass
                 # Skip if model already run and saved
-                if model.startswith("GeNN_" + str(specimen_id)) and model.endswith(
-                    "_{}.pkl".format(model_type)
-                ):
-                    print("Already saved GeNN run for {}".format(model))
-                    break
+                # if model.startswith("GeNN_" + str(specimen_id)) and model.endswith(
+                #     "_{}.pkl".format(model_type)
+                # ):
+                #     print("Already saved GeNN run for {}".format(model))
+                #     # break
             else:
 
                 # Load Allen model parameters
@@ -284,18 +289,23 @@ if __name__ == "__main__":
                     specimen_id, model_type
                 )
 
+                # Convert stimulus to 64bit
+                stimulus = stimulus.astype("float64")
+
                 # Read config parameters and convert to correct units
                 units_dict = get_units_dict(model_type, config)
-                data_dict = run_GeNN_GLIF(units_dict, num_neurons=1, stimulus=stimulus)
+                data_dict = run_GeNN_GLIF(
+                    units_dict, num_neurons=1, stimulus=stimulus, model_type=model_type
+                )
 
                 # Save results
 
                 with open(save_name, "wb") as f:
                     pickle.dump((data_dict, saved_model), f)
 
-            # # Load results
-            # with open(save_name, "rb") as f:
-            #     data_dict, saved_model = pickle.load(f)
+            # Load results
+            with open(save_name, "rb") as f:
+                data_dict, saved_model = pickle.load(f)
 
             t = saved_model["time"]
 
@@ -309,9 +319,14 @@ if __name__ == "__main__":
                     continue
 
                 try:
-                    Allen = saved_model[var_name_dict[v]] * var_scale[v]
+                    Allen = (
+                        saved_model[var_name_dict[v]].astype("float64") * var_scale[v]
+                    )
                 except:
-                    Allen = saved_model[var_name_dict[v]][:] * var_scale[v]
+                    Allen = (
+                        saved_model[var_name_dict[v]][:].astype("float64")
+                        * var_scale[v]
+                    )
 
                 GeNN = np.squeeze(data_dict[v])
                 # result = check_nan_arrays_equal(Allen, GeNN)

@@ -107,7 +107,6 @@ def load_model_config_stimulus(specimen_id, model_type):
 
     # Find saved Allen model
     for model in saved_models:
-        print(model)
         if model.startswith(str(specimen_id)) and model.endswith(
             "_{}.pkl".format(model_type)
         ):

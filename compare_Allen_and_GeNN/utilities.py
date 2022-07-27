@@ -9,6 +9,8 @@ def plot_results_and_diff(A, A_name, B, B_name, t, title, y_axis_unit):
     # Both Plots
     axs[0].plot(t, A, label=A_name)
     axs[0].plot(t, B, label=B_name)
+    axs[0].plot(t, A, "*", label=A_name)
+    axs[0].plot(t, B, "*", label=B_name)
     axs[0].set_ylabel(y_axis_unit)
     axs[0].set_title("{0} and {1}".format(A_name, B_name))
     axs[0].legend()

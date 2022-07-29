@@ -1,8 +1,5 @@
 import sys
 import pickle
-from importlib_metadata import pass_none
-
-from sqlalchemy import all_
 
 sys.path.append("..")  # TODO: Come up with a better way to handle the imports
 from pygenn.genn_model import create_custom_current_source_class, GeNNModel

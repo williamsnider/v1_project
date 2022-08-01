@@ -1,7 +1,8 @@
 # Replicate point_450glifs example with GeNN
 import sys
+from tkinter import Y
 
-sys.path.append("/home/williamsnider/Code/v1_project")
+sys.path.append("../../")
 from GLIF_models import GLIF3
 import glob
 import pprint
@@ -66,14 +67,12 @@ for i, dynamics_file in enumerate(dynamics_files):
 with open(SIM_CONFIG_PATH) as f:
     sim_config = json.load(f)
 
-
 # Create base model
 model = GeNNModel("double", "v1")
 model.dT = sim_config["run"]["dt"]
 
-
 # Construct populations
-pop_list = []
+pop_dict = {}
 for i, model_name in enumerate(model_names):
     dynamics_file = dynamics_files[i]
     dynamics_path = Path(DYNAMICS_BASE_DIR, dynamics_file)
@@ -104,15 +103,15 @@ for i, model_name in enumerate(model_names):
     params = {k: dynamics_params_renamed[k] for k in neuron_class.get_param_names()}
     init = {k: dynamics_params_renamed[k] for k in ["V", "refractory_countdown"]}
 
-    pop_list.append(
-        model.add_neuron_population(
-            pop_name=model_name,
-            num_neurons=num_neurons,
-            neuron=neuron_class,
-            param_space=params,
-            var_space=init,
-        )
+    pop_dict[model_name] = model.add_neuron_population(
+        pop_name=model_name,
+        num_neurons=num_neurons,
+        neuron=neuron_class,
+        param_space=params,
+        var_space=init,
     )
+    print("{} population added to model.".format(model_name))
+    break
 
 # Dict: from node_id to population + idx (inside population)
 node_to_pop_idx = {}
@@ -127,6 +126,9 @@ for n in nodes:
     node_id = n["node_id"]
     node_to_pop_idx[node_id] = [model_name, pop_idx]
 
+# +1 so that pop_counts == num_neurons
+for k in pop_counts.keys():
+    pop_counts[k] += 1
 # Add connections (synapses) between popluations
 edges = net.edges["v1_to_v1"]
 connections = edges.get_target(1)
@@ -156,112 +158,59 @@ for e in edges:
     edges_for_df.append(e_dict)
 df = pd.DataFrame(edges_for_df)
 
-# Scnn1a to Scnn1a
-pop1 = "Scnn1a"
-pop2 = "Scnn1a"
-src = df[~df["source_" + pop1].isnull()]  # Get synapses that have correct source
-src_tgt = src[~src["target_" + pop2].isnull()]  # Get synapses that have correct target
-pop1_pop2_synapses = {i: [] for i in range(pop_counts[pop1] + 1)}
-s_list = src_tgt["source_" + pop1].tolist()
-t_list = src_tgt["target_" + pop2].tolist()
-for i, s in enumerate(s_list):
-    pop1_pop2_synapses[s].append(t_list[i])
+# synapse_dict = {}
+# for pop1 in model_names:
+#     for pop2 in model_names:
+#         src = df[
+#             ~df["source_" + pop1].isnull()
+#         ]  # Get synapses that have correct source
+#         src_tgt = src[
+#             ~src["target_" + pop2].isnull()
+#         ]  # Get synapses that have correct target
+#         pop1_pop2_synapses = {i: [] for i in range(pop_counts[pop1])}
+#         s_list = src_tgt["source_" + pop1].tolist()
+#         t_list = src_tgt["target_" + pop2].tolist()
 
-# Find max synapses
-max_synapses = 0
-for i in range(pop_counts[pop1] + 1):
-    max_synapses = max(max_synapses, len(pop1_pop2_synapses[i]))
+#         s_ini = {"g": -0.2}
+#         ps_p = {
+#             "tau": 1.0,
+#             "E": -80.0,
+#         }  # Decay time constant [ms]  # Reversal potential [mV]
 
-# Pad synapses
-for k, v in pop1_pop2_synapses.items():
+#         synapse_group_name = pop1 + "_to_" + pop2
+#         synapse_group = model.add_synapse_population(
+#             synapse_group_name,
+#             "SPARSE_GLOBALG",
+#             10,
+#             pop1,
+#             pop2,
+#             "StaticPulse",
+#             {},
+#             s_ini,
+#             {},
+#             {},
+#             "ExpCond",
+#             ps_p,
+#             {},
+#         )
+#         synapse_group.set_sparse_connections(np.array(s_list), np.array(t_list))
+#         synapse_dict[synapse_group_name] = synapse_group
+#         print("Synapses added for {} -> {}".format(pop1, pop2))
+model.build(force_rebuild=True)
+model.load()
 
-    num_pads_needed = max_synapses - len(v)
-    for j in range(num_pads_needed):
-        pop1_pop2_synapses[k].append(-1)
+num_steps = 10
+var_list = ["V"]
+data = {
+    model_name: {k: np.zeros((pop_counts[model_name], num_steps)) for k in var_list}
+    for model_name in model_names
+}
 
-target_ids = []
-for i in range(pop_counts[pop1] + 1):
-    target_ids.extend(pop1_pop2_synapses[i])
+for i in range(num_steps):
+    model.step_time()
 
-# Q: What is $id_pre
-connections_params = {"max_synapses": max_synapses}
-connections_model = create_custom_sparse_connect_init_snippet_class(
-    "connections",
-    param_names=["max_synapses"],
-    row_build_code="""
-        int target;
-        for (int jj = 0; jj<$(max_synapses); jj++){
-            target = $(target_ids)[$(id_pre)*$(max_synapses)+jj];
-        
-            // target id of -1 signals no synaptic connection
-            if (target != -1){
-                $(addSynapse, target);
-            }
-        }
-        $(endRow);
-        """,
-    calc_max_row_len_func=create_cmlf_class(
-        lambda num_pre, num_post, pars: int(pars[0])
-    )(),
-    calc_max_col_len_func=create_cmlf_class(
-        lambda num_pre, num_post, pars: int(pars[0])
-    )(),
-    extra_global_params=("target_ids", "int*"),
-)
+    for model_name in model_names:
+        pop = pop_dict[model_name]
 
-s_ini = {"g": -0.2}
-ps_p = {"tau": 1.0, "E": -80.0}  # Decay time constant [ms]  # Reversal potential [mV]
-
-
-synapse_group = model.add_synapse_population(
-    "Pop1self",
-    "SPARSE_GLOBALG",
-    10,
-    pop1,
-    pop1,
-    "StaticPulse",
-    {},
-    s_ini,
-    {},
-    {},
-    "ExpCond",
-    ps_p,
-    {},
-    init_connectivity(connections_model, connections_params),
-)
-
-# Add GLIF Class to model
-# model = GeNNModel("double", GLIF_dict[model_type], backend="SingleThreadedCPU")
-# model.dT = units_dict["dT"]
-# pop1 = model.add_neuron_population(
-#     pop_name="pop1",
-#     num_neurons=num_neurons,
-#     neuron=GLIF,
-#     param_space=GLIF_params,
-#     var_space=GLIF_init,
-# )
-# # Assign extra global parameter values
-# for k in pop1.extra_global_params.keys():
-#     pop1.set_extra_global_param(k, units_dict[k])
-
-# # Add current source to model
-# external_current_source = create_custom_current_source_class(
-#     class_name="external_current",
-#     var_name_types=[("current", "double")],
-#     injection_code="""
-#     int idx = round($(t) / DT);
-#     $(current)=$(Ie)[idx];
-#     $(injectCurrent,$(current) );
-#     """,
-#     extra_global_params=[("Ie", "double*")],
-# )
-# cs_ini = {"current": 0.0}  # external input current from Teeter 2018
-# cs = model.add_current_source(
-#     cs_name="external_current_source",
-#     current_source_model=external_current_source,
-#     pop=pop1,
-#     param_space={},
-#     var_space=cs_ini,
-# )
-# stimulus_conversion = 1e9  # amps -> nanoamps
-# cs.set_extra_global_param("Ie", stimulus * stimulus_conversion)
+        for var_name in var_list:
+            data[model_name][var_name][:, i] = pop.vars[var_name].view

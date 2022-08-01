@@ -68,7 +68,7 @@ with open(SIM_CONFIG_PATH) as f:
     sim_config = json.load(f)
 
 # Create base model
-model = GeNNModel("double", "v1")
+model = GeNNModel("double", "v1", backend="SingleThreadedCPU")
 model.dT = sim_config["run"]["dt"]
 
 # Construct populations
@@ -112,7 +112,6 @@ for i, model_name in enumerate(model_names):
     )
     print("{} population added to model.".format(model_name))
     break
-
 # Dict: from node_id to population + idx (inside population)
 node_to_pop_idx = {}
 pop_counts = {}
@@ -206,11 +205,23 @@ data = {
     for model_name in model_names
 }
 
+pop = pop_dict["Scnn1a"]
+v_view = pop.vars["V"].view
 for i in range(num_steps):
     model.step_time()
+    data = v_view[:]
+    print(data)
 
-    for model_name in model_names:
-        pop = pop_dict[model_name]
+# for i in range(num_steps):
+#     model.step_time()
 
-        for var_name in var_list:
-            data[model_name][var_name][:, i] = pop.vars[var_name].view
+#     for model_name in model_names:
+#         pop = pop_dict[model_name]
+
+#         v_view = pop.vars["V"].view
+#         for var_name in var_list:
+#             print(i, model_name, var_name, sep="\t")
+#             pop.pull_var_from_device("V")
+#             data[model_name][var_name][:, i] = v_view[:]
+
+print("finished.")

@@ -1,0 +1,36 @@
+This code was run with 
+Python 2.7.13 :: Anaconda 2.1.0 (64-bit)
+Scipy version 0.19.1
+Numpy version 1.13.1
+
+An internet connection is required in order to accesses the Allen Institute Cell Types Database.
+
+The following python libraries will be required.
+allensdk
+matplotlib
+numpy
+os
+pandas
+shutil
+sys
+subprocess (if submitting to a cluster)
+pickle
+time
+scipy
+warnings
+datetime
+statsmodels
+copy
+csv
+ 
+For the clustering code, Jupyter Notebooks need to be installed through Project Jupyter. This installation should include installation of an R kernel in order to run the Jupyter R notebooks. 
+In addition, the following R packages are required. Note that the first code cell in each Jupyter notebook will attempt to install these relevant R packages if they are not already present:
+ape
+e1071
+gplots
+mclust
+apcluster
+gtools
+plotrix
+
+

@@ -1,14 +1,15 @@
 import sys
 import pickle
 
-sys.path.append("..")  # TODO: Come up with a better way to handle the imports
 from pygenn.genn_model import create_custom_current_source_class, GeNNModel
-from allen_simulation import load_model_config_stimulus
+from allen_utilities import load_model_config_stimulus
+sys.path.append("..")  # TODO: Come up with a better way to handle the imports
 from GLIF_models import GLIF1, GLIF2, GLIF3, GLIF4, GLIF5
 from parameters import GLIF_dict, saved_models
 import numpy as np
 from pathlib import Path
 from utilities import plot_results_and_diff, check_nan_arrays_equal
+
 
 
 def get_units_dict(model_type, config):
@@ -154,15 +155,87 @@ def get_var_list(model_type):
 
     return var_list
 
+def get_param_names(model_type):
+    """Returns the list of state variables for each model."""
+
+    if model_type == "LIF_model":
+        param_names=["C", "G", "El", "th_inf", "spike_cut_length",]
+
+    elif model_type == "LIFR_model":
+        param_names=[
+        "C",
+        "G",
+        "El",
+        "a",
+        "b",
+        "a_spike",
+        "b_spike",
+        "spike_cut_length",
+        "th_inf",
+    ]
+    elif model_type == "LIFASC_model":
+        param_names=[
+        "C",
+        "G",
+        "El",
+        "spike_cut_length",
+        "th_inf",
+        "ASC_length",
+    ]
+    elif model_type == "LIFRASC_model":
+        param_names=[
+        "C",
+        "G",
+        "El",
+        "a",
+        "b",
+        "a_spike",
+        "b_spike",
+        "spike_cut_length",
+        "th_inf",
+        "ASC_length",
+    ]
+    elif model_type == "LIFRASCAT_model":
+        param_names=[
+        "C",
+        "G",
+        "El",
+        "a",
+        "b",
+        "a_spike",
+        "b_spike",
+        "spike_cut_length",
+        "th_inf",
+        "a_voltage",
+        "b_voltage",
+        "ASC_length",
+    ]
+    else:
+        raise NotImplementedError
+
+    return param_names
 
 def run_GeNN_GLIF(units_dict, num_neurons, stimulus, model_type):
 
     # Check inputs
     assert stimulus.dtype == "float64"
 
+    # Choose correct GLIF model
+    if model_type == "LIF_model":
+        GLIF = GLIF1
+    elif model_type == "LIFR_model":
+        GLIF = GLIF2
+    elif model_type == "LIFASC_model":
+        GLIF = GLIF3
+    elif model_type == "LIFRASC_model":
+        GLIF = GLIF4
+    elif model_type == "LIFRASCAT_model":
+        GLIF = GLIF5
+    else:
+        raise NotImplementedError
+
     # Add GLIF Class to model
-    GLIF = eval(GLIF_dict[model_type])
-    GLIF_params = {k: units_dict[k] for k in GLIF.get_param_names()}
+    GLIF_params = {k: units_dict[k] for k in get_param_names(model_type)}
     GLIF_init = {k: units_dict[k] for k in get_var_list(model_type)}
     model = GeNNModel("double", GLIF_dict[model_type], backend="SingleThreadedCPU")
     model.dT = units_dict["dT"]
@@ -200,7 +273,7 @@ def run_GeNN_GLIF(units_dict, num_neurons, stimulus, model_type):
     cs.set_extra_global_param("Ie", stimulus * stimulus_conversion)
 
     # Build and load model
-    model.build()
+    model.build(force_rebuild=True)
     model.load()
 
     # Create arrays to store data of variables

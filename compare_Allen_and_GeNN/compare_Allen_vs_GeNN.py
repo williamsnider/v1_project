@@ -1,4 +1,3 @@
-from allen_simulation import load_model_config_stimulus
 import pickle
 import matplotlib.pyplot as plt
 import numpy as np
@@ -30,14 +29,16 @@ for specimen_id in specimen_ids:
             GeNN_data_dict, Allen_model = pickle.load(f)
 
         t = Allen_model["time"]
+        mask = np.logical_and(t>18.0, t<18.3)
+        t = t[mask]
 
-        V_GeNN = np.squeeze(GeNN_data_dict["V"])
-        T_GeNN = np.squeeze(GeNN_data_dict["T"])
-        A_GeNN = np.squeeze(GeNN_data_dict["ASC"])
+        V_GeNN = np.squeeze(GeNN_data_dict["V"])[mask]
+        T_GeNN = np.squeeze(GeNN_data_dict["T"])[mask]
+        A_GeNN = np.squeeze(GeNN_data_dict["ASC"])[mask]
 
-        V_Allen = Allen_model["voltage"] * 1e3
-        T_Allen = Allen_model["threshold"] * 1e3
-        A_Allen = Allen_model["AScurrents"] * 1e9
+        V_Allen = Allen_model["voltage"][mask] * 1e3
+        T_Allen = Allen_model["threshold"][mask] * 1e3
+        A_Allen = Allen_model["AScurrents"][mask] * 1e9
 
         for col_num in range(num_cols):
 

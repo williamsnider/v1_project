@@ -33,3 +33,4 @@ def check_nan_arrays_equal(A, B):
 def count_unequal_ignoring_nans(A, B):
     "Counts the number of unequal elements (ignoring nans)."
     return (~((A == B) | (np.isnan(A) & np.isnan(B)))).sum()
+

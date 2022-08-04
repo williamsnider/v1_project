@@ -1,7 +1,5 @@
 # Replicate point_450glifs example with GeNN
 import sys
-from tkinter import Y
-
 sys.path.append("../../")
 from GLIF_models import GLIF3
 import glob

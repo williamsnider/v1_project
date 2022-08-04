@@ -3,6 +3,7 @@ import numpy as np
 import allensdk.core.json_utilities as ju
 import warnings
 from allensdk.api.queries.glif_api import GlifApi
+import sys
 import glif_sdk.lims_utilities as lu
 from allensdk.core.nwb_data_set import NwbDataSet
 from allensdk.api.api import Api
@@ -53,7 +54,7 @@ def query_missing_exp_var(sp_id):
     # check to make sure there is not more then one of the same model
     names=[ev[0] for ev in exp_var]
     if len(np.unique(names))>len(names):
-        print q
+        print(q)
         raise Exception('too many models with the same name')
     return exp_var
 
@@ -106,7 +107,7 @@ def get_ev_from_folder(ends_with, specimen_id_directory, model_string):
         
     '''
     sp_id=os.path.basename(specimen_id_directory)[:9]
-    print sp_id
+    print(sp_id)
     cre=os.path.basename(specimen_id_directory)[10:]
     try:
         nms=glif_api.get_neuronal_models(int(sp_id))[0]['neuronal_models']
@@ -114,11 +115,11 @@ def get_ev_from_folder(ends_with, specimen_id_directory, model_string):
         exp_var=[[m['name'], m['neuronal_model_runs'][0]['explained_variance_ratio']] for m in nms] #list of madel name, explained variance pairs
     except:
 #    if True:
-        print sp_id, cre, 'is not in glif api: querying database'
+        print(sp_id, cre, 'is not in glif api: querying database')
         exp_var=query_missing_exp_var(sp_id)
     if len(exp_var)<0:
         # I have only seen this happen via the glif.api and it was on human data that shouldnt be there
-        print sp_id, cre, 'exp var is empty: querying database'
+        print(sp_id, cre, 'exp var is empty: querying database')
         exp_var=query_missing_exp_var(sp_id)        
     
     if np.any([f.endswith(ends_with) for f in os.listdir(specimen_id_directory)]):            
@@ -149,7 +150,7 @@ def get_model_nwb_path_from_folder(ends_with, specimen_id_directory, s):
     '''
     sp_id=os.path.basename(specimen_id_directory)[:9]
     if sp_id=='580895033':
-        print 'skipping 580895033 which is not in the api, returning np.nan'
+        print('skipping 580895033 which is not in the api, returning np.nan')
         return np.nan
     if len(glif_api.get_neuronal_models(int(sp_id)))>1: #basic check that data is the form expected
         raise Exception('why is there more than one list for %d' % sp_id)
@@ -184,7 +185,7 @@ def download_model_nwb_if_model_exists_in_SDD(ends_with, specimen_id_directory, 
     '''
     sp_id=os.path.basename(specimen_id_directory)[:9]
     if sp_id=='580895033':
-        print 'skipping 580895033 which is not in the api, returning np.nan'
+        print('skipping 580895033 which is not in the api, returning np.nan')
         return np.nan
     if len(glif_api.get_neuronal_models(int(sp_id)))>1: #basic check that data is the form expected
         raise Exception('why is there more than one list for %d' % sp_id)
@@ -328,7 +329,7 @@ def check_and_organize_data(all_neurons):
         raise Exception('The '+', '.join([cre_in_dir[ii] for ii in np.where([ll not in pos_cre_lines for ll in cre_in_dir])[0]])+' cre lines are not in the list.  Update the list')
     #--check to see if any of the cre lines in the predefined list are not present in the data set.
     if np.any([ll not in cre_in_dir for ll in pos_cre_lines]):
-        print 'The '+', '.join([pos_cre_lines[ii] for ii in np.where([ll not in cre_in_dir for ll in pos_cre_lines ])[0]])+' identified cre lines do not exist in this data set.'
+        print('The '+', '.join([pos_cre_lines[ii] for ii in np.where([ll not in cre_in_dir for ll in pos_cre_lines ])[0]])+' identified cre lines do not exist in this data set.')
         
    
     #-- separating different cre pos lines for distribution plotting

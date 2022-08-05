@@ -1,5 +1,6 @@
 # Replicate point_450glifs example with GeNN
 import sys
+
 sys.path.append("../../")
 from GLIF_models import GLIF3
 import glob
@@ -9,12 +10,7 @@ import pandas as pd
 import json
 from pathlib import Path
 from sonata.circuit import File
-from pygenn.genn_model import (
-    GeNNModel,
-    create_custom_sparse_connect_init_snippet_class,
-    create_cmlf_class,
-    init_connectivity,
-)
+from pygenn.genn_model import GeNNModel
 
 DYNAMICS_BASE_DIR = Path("./point_components/cell_models")
 SIM_CONFIG_PATH = Path("point_450glifs/config.simulation.json")
@@ -76,6 +72,7 @@ for i, model_name in enumerate(model_names):
     dynamics_path = Path(DYNAMICS_BASE_DIR, dynamics_file)
     with open(dynamics_path) as f:
         dynamics_params = json.load(f)
+    num_neurons = len(node_dict[model_name])
 
     dynamics_params_renamed = {
         "C": dynamics_params["C_m"],
@@ -86,10 +83,10 @@ for i, model_name in enumerate(model_names):
         "V": dynamics_params["V_m"],
         "spike_cut_length": round(dynamics_params["t_ref"] / sim_config["run"]["dt"]),
         "refractory_countdown": -1,
-        "k": dynamics_params["asc_decay"],
-        "r": [1.0, 1.0],
-        "ASC": dynamics_params["asc_init"],
-        "asc_amp_array": dynamics_params["asc_amps"],
+        "k": np.repeat(dynamics_params["asc_decay"], num_neurons).ravel(),
+        "r": np.repeat([1.0, 1.0], num_neurons).ravel(),
+        "ASC": np.repeat(dynamics_params["asc_init"], num_neurons).ravel(),
+        "asc_amp_array": np.repeat(dynamics_params["asc_amps"], num_neurons).ravel(),
         "ASC_length": 2,
     }
     # tau_syn? used for synapses (see https://nest-simulator.readthedocs.io/en/v3.3/models/glif_psc.html#id13)
@@ -97,7 +94,6 @@ for i, model_name in enumerate(model_names):
 
     neuron_class = GLIF3
 
-    num_neurons = len(node_dict[model_name])
     params = {k: dynamics_params_renamed[k] for k in neuron_class.get_param_names()}
     init = {k: dynamics_params_renamed[k] for k in ["V", "refractory_countdown"]}
 
@@ -108,8 +104,14 @@ for i, model_name in enumerate(model_names):
         param_space=params,
         var_space=init,
     )
+
+    # Add extra global params
+    # Assign extra global parameter values
+    for k in pop_dict[model_name].extra_global_params.keys():
+        pop_dict[model_name].set_extra_global_param(k, dynamics_params_renamed[k])
+
     print("{} population added to model.".format(model_name))
-    break
+
 # Dict: from node_id to population + idx (inside population)
 node_to_pop_idx = {}
 pop_counts = {}
@@ -126,6 +128,8 @@ for n in nodes:
 # +1 so that pop_counts == num_neurons
 for k in pop_counts.keys():
     pop_counts[k] += 1
+
+
 # Add connections (synapses) between popluations
 edges = net.edges["v1_to_v1"]
 connections = edges.get_target(1)
@@ -155,44 +159,41 @@ for e in edges:
     edges_for_df.append(e_dict)
 df = pd.DataFrame(edges_for_df)
 
-# synapse_dict = {}
-# for pop1 in model_names:
-#     for pop2 in model_names:
-#         src = df[
-#             ~df["source_" + pop1].isnull()
-#         ]  # Get synapses that have correct source
-#         src_tgt = src[
-#             ~src["target_" + pop2].isnull()
-#         ]  # Get synapses that have correct target
-#         pop1_pop2_synapses = {i: [] for i in range(pop_counts[pop1])}
-#         s_list = src_tgt["source_" + pop1].tolist()
-#         t_list = src_tgt["target_" + pop2].tolist()
+synapse_dict = {}
+for pop1 in model_names:
+    for pop2 in model_names:
+        src = df[
+            ~df["source_" + pop1].isnull()
+        ]  # Get synapses that have correct source
+        src_tgt = src[~src["target_" + pop2].isnull()]
 
-#         s_ini = {"g": -0.2}
-#         ps_p = {
-#             "tau": 1.0,
-#             "E": -80.0,
-#         }  # Decay time constant [ms]  # Reversal potential [mV]
+        s_list = src_tgt["source_" + pop1].tolist()
+        t_list = src_tgt["target_" + pop2].tolist()
+        s_ini = {"g": -0.2}
+        ps_p = {
+            "tau": 1.0,
+            "E": -80.0,
+        }  # Decay time constant [ms]  # Reversal potential [mV]
 
-#         synapse_group_name = pop1 + "_to_" + pop2
-#         synapse_group = model.add_synapse_population(
-#             synapse_group_name,
-#             "SPARSE_GLOBALG",
-#             10,
-#             pop1,
-#             pop2,
-#             "StaticPulse",
-#             {},
-#             s_ini,
-#             {},
-#             {},
-#             "ExpCond",
-#             ps_p,
-#             {},
-#         )
-#         synapse_group.set_sparse_connections(np.array(s_list), np.array(t_list))
-#         synapse_dict[synapse_group_name] = synapse_group
-#         print("Synapses added for {} -> {}".format(pop1, pop2))
+        synapse_group_name = pop1 + "_to_" + pop2
+        synapse_group = model.add_synapse_population(
+            synapse_group_name,
+            "SPARSE_GLOBALG",
+            10,
+            pop1,
+            pop2,
+            "StaticPulse",
+            {},
+            s_ini,
+            {},
+            {},
+            "ExpCond",
+            ps_p,
+            {},
+        )
+        synapse_group.set_sparse_connections(np.array(s_list), np.array(t_list))
+        synapse_dict[synapse_group_name] = synapse_group
+        print("Synapses added for {} -> {}".format(pop1, pop2))
 model.build(force_rebuild=True)
 model.load()
 
@@ -202,24 +203,25 @@ data = {
     model_name: {k: np.zeros((pop_counts[model_name], num_steps)) for k in var_list}
     for model_name in model_names
 }
+view_dict = {}
+for model_name in model_names:
+    pop = pop_dict[model_name]
+    for v in var_list:
+        view_dict[model_name] = {v: pop.vars[v].view}
 
-pop = pop_dict["Scnn1a"]
-v_view = pop.vars["V"].view
+
 for i in range(num_steps):
     model.step_time()
-    data = v_view[:]
-    print(data)
 
-# for i in range(num_steps):
-#     model.step_time()
+    for model_name in model_names:
+        pop = pop_dict[model_name]
 
-#     for model_name in model_names:
-#         pop = pop_dict[model_name]
-
-#         v_view = pop.vars["V"].view
-#         for var_name in var_list:
-#             print(i, model_name, var_name, sep="\t")
-#             pop.pull_var_from_device("V")
-#             data[model_name][var_name][:, i] = v_view[:]
-
-print("finished.")
+        v_view = pop.vars["V"].view
+        for var_name in var_list:
+            print(i, model_name, var_name, sep="\t")
+            # pop.pull_var_from_device("V")
+            view = view_dict[model_name][var_name]
+            output = view[:]
+            print(output)
+            data[model_name][var_name][:, i] = output
+print("Simulation complete.")

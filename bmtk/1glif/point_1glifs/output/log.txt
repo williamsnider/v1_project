@@ -1,0 +1,11 @@
+2022-08-15 18:17:07,455 [INFO] Created log file
+2022-08-15 18:17:07,463 [INFO] Batch processing nodes for v1/0.
+2022-08-15 18:17:07,467 [INFO] Batch processing nodes for lgn/0.
+2022-08-15 18:17:07,474 [INFO] Setting up output directory
+2022-08-15 18:17:07,475 [INFO] Building cells.
+2022-08-15 18:17:07,476 [INFO] Building recurrent connections
+2022-08-15 18:17:07,476 [INFO] Build virtual cell stimulations for LGN_spikes
+2022-08-15 18:17:07,655 [INFO] Network created.
+2022-08-15 18:17:07,657 [INFO] Starting Simulation
+2022-08-15 18:17:10,648 [INFO] Simulation finished, finalizing results.
+2022-08-15 18:17:11,236 [INFO] Done.

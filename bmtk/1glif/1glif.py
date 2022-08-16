@@ -3,12 +3,13 @@ import numpy as np
 from sonata.reports.spike_trains import SpikeTrains
 import json
 from pathlib import Path
+import pandas as pd
 
-DYNAMICS_BASE_DIR = Path("../450glifs_without_intfire/point_components/cell_models")
-SIM_CONFIG_PATH = Path(
-    "../450glifs_without_intfire/point_450glifs/config.simulation.json"
-)
-GLIF3_dynamics_file = Path("478958894_glif_lif_asc_psc.json")
+DYNAMICS_BASE_DIR = Path("./point_components/cell_models")
+SIM_CONFIG_PATH = Path("./point_1glifs/config.simulation.json")
+GLIF3_dynamics_file = Path("593618144_glif_lif_asc_psc.json")
+SYN_PATH = Path("./point_1glifs/network/lgn_v1_edge_types.csv")
+LGN_SPIKES_PATH = Path("./point_1glifs/inputs/lgn_spikes.h5")
 
 ### Define custom classes ###
 psc_Alpha = pygenn.genn_model.create_custom_postsynaptic_class(
@@ -102,11 +103,10 @@ def spikes_list_to_start_end_times(spikes_list):
 with open(SIM_CONFIG_PATH) as f:
     sim_config = json.load(f)
 model = pygenn.genn_model.GeNNModel(backend="SingleThreadedCPU")
+model.dT = sim_config["run"]["dt"]
 
 ### Add population of 1 LGN neuron ###
-spikes = SpikeTrains.from_sonata(
-    "../450glifs_without_intfire/point_450glifs/inputs/lgn_spikes.h5"
-)
+spikes = SpikeTrains.from_sonata(LGN_SPIKES_PATH)
 spikes_df = spikes.to_dataframe()
 
 num_lgn = 1
@@ -132,19 +132,22 @@ with open(v1_dynamics_path) as f:
     dynamics_params = json.load(f)
 num_GLIF = 1
 
+
 dynamics_params_renamed = {
-    "C": dynamics_params["C_m"],
-    "G": dynamics_params["g"],
+    "C": dynamics_params["C_m"] / 1000,  # pF -> nF
+    "G": dynamics_params["g"] / 1000,  # nS -> uS
     "El": dynamics_params["E_L"],
     "th_inf": dynamics_params["V_th"],
     "dT": sim_config["run"]["dt"],
     "V": dynamics_params["V_m"],
     "spike_cut_length": round(dynamics_params["t_ref"] / sim_config["run"]["dt"]),
     "refractory_countdown": -1,
-    "k": np.repeat(dynamics_params["asc_decay"], num_GLIF).ravel(),
+    "k": 1
+    / np.repeat(dynamics_params["asc_decay"], num_GLIF).ravel(),  # TODO: Reciprocal?
     "r": np.repeat([1.0, 1.0], num_GLIF).ravel(),
-    "ASC": np.repeat(dynamics_params["asc_init"], num_GLIF).ravel(),
-    "asc_amp_array": np.repeat(dynamics_params["asc_amps"], num_GLIF).ravel(),
+    "ASC": np.repeat(dynamics_params["asc_init"], num_GLIF).ravel() / 1000,  # pA -> nA
+    "asc_amp_array": np.repeat(dynamics_params["asc_amps"], num_GLIF).ravel()
+    / 1000,  # pA -> nA
     "ASC_length": 2,
 }
 
@@ -164,14 +167,22 @@ for k in pop_dict["GLIF3"].extra_global_params.keys():
 
 
 ### Add synapse population ###
+# TODO: How to indicate excitatory/inhibitory
+# TODO: How to add synaptic weight?
+# TODO: Tau normalized to give 1pA?
+syn_df = pd.read_csv(SYN_PATH, sep=" ")
+delay_steps = round(
+    syn_df[syn_df["edge_type_id"] == 100]["delay"][0] / sim_config["run"]["dt"]
+)  # delay (ms) -> delay (steps)
+weight = syn_df[syn_df["edge_type_id"] == 100]["syn_weight"][0] / 1e3  # nS -> uS
 syn_dict = {}
-psc_Alpha_params = {"tau": 1.0}  # TODO wrong value
+psc_Alpha_params = {"tau": dynamics_params["tau_syn"][0]}  # TODO: Always port 0?
 psc_Alpha_init = {"x": 0.0}  # TODO check 0
-s_ini = {"g": -0.2}
+s_ini = {"g": weight}  # TODO  Unsure about this value
 syn_dict["LGN_to_GLIF3"] = model.add_synapse_population(
     pop_name="LGN_to_GLIF3",
     matrix_type="SPARSE_GLOBALG_INDIVIDUAL_PSM",
-    delay_steps=2,  # TODO: wrong value
+    delay_steps=delay_steps,
     source="LGN",
     target="GLIF3",
     w_update_model="StaticPulse",
@@ -189,7 +200,7 @@ syn_dict["LGN_to_GLIF3"].set_sparse_connections(np.array([0]), np.array([0]))
 model.build(force_rebuild=True)
 model.load()
 
-num_steps = round(spike_times[10] / model.dT)
+num_steps = round(3000 / model.dT)  # Nest simulation is 3000ms
 var_list = ["V"]
 data = {"GLIF3": {"V": np.zeros((1, num_steps))}}
 view_dict = {"GLIF3": {"V": pop_dict["GLIF3"].vars["V"].view}}
@@ -207,7 +218,35 @@ for i in range(num_steps):
             # pop.pull_var_from_device("V")
             view = view_dict[model_name][var_name]
             output = view[:]
-            if i % 1000 == 0:
+            if i % 100000 == 0:
                 print(i)
                 print(output)
             data[model_name][var_name][:, i] = output
+
+
+# Plot voltage
+A = data["GLIF3"]["V"].ravel()
+t = np.arange(0, len(A)) * sim_config["run"]["dt"]
+import matplotlib.pyplot as plt
+
+fig, axs = plt.subplots(1, 1)
+
+# GeNN
+axs.plot(t, A, label="GeNN")
+axs.set_ylabel("mV")
+axs.set_xlabel("ms")
+
+# Nest
+from bmtk.utils.reports.compartment import CompartmentReport
+
+pop_name = "Scnn1a"
+REPORT_PATH = Path("./point_1glifs/output/membrane_potential.h5")
+report = CompartmentReport(REPORT_PATH, population=pop_name, mode="r")
+B = report.data(node_id=0).ravel()
+t = (
+    np.arange(0, len(B)) * sim_config["run"]["dt"]
+)  # TODO: uneven numbers between A and B?
+axs.plot(t, B, label="Nest")
+axs.legend()
+
+plt.show()

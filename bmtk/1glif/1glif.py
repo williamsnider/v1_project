@@ -11,17 +11,6 @@ GLIF3_dynamics_file = Path("593618144_glif_lif_asc_psc.json")
 SYN_PATH = Path("./point_1glifs/network/lgn_v1_edge_types.csv")
 LGN_SPIKES_PATH = Path("./point_1glifs/inputs/lgn_spikes.h5")
 
-### Define custom classes ###
-psc_Alpha = pygenn.genn_model.create_custom_postsynaptic_class(
-    class_name="Alpha",
-    decay_code="""
-    $(x) += exp(-DT/$(tau)) * ((DT * $(inSyn) * exp(1.0f) / $(tau)));
-    $(inSyn)*=exp(-DT/$(tau));
-    """,
-    apply_input_code="$(Isyn) += $(x);",
-    var_name_types=[("x", "scalar")],
-    param_names=[("tau")],
-)
 
 GLIF3 = pygenn.genn_model.create_custom_neuron_class(
     "GLIF3",
@@ -167,8 +156,21 @@ for k in pop_dict["GLIF3"].extra_global_params.keys():
 
 
 ### Add synapse population ###
-# TODO: How to indicate excitatory/inhibitory
-# TODO: How to add synaptic weight?
+
+### Define custom classes ###
+psc_Alpha = pygenn.genn_model.create_custom_postsynaptic_class(
+    class_name="Alpha",
+    decay_code="""
+    $(x) = exp(-DT/$(tau)) * ((DT * $(inSyn) * exp(1.0f) / $(tau)) + $(x));
+    $(inSyn)*=exp(-DT/$(tau));
+    """,
+    apply_input_code="""
+    $(Isyn) += $(x);     
+""",
+    var_name_types=[("x", "scalar")],
+    param_names=[("tau")],
+)
+
 # TODO: Tau normalized to give 1pA?
 syn_df = pd.read_csv(SYN_PATH, sep=" ")
 delay_steps = round(
@@ -218,10 +220,13 @@ for i in range(num_steps):
             # pop.pull_var_from_device("V")
             view = view_dict[model_name][var_name]
             output = view[:]
-            if i % 100000 == 0:
-                print(i)
-                print(output)
+            # if i % 100000 == 0:
+            #     print(i)
+            #     print(output)
             data[model_name][var_name][:, i] = output
+
+    # if i == 447550:
+    #     break
 
 
 # Plot voltage
@@ -229,12 +234,12 @@ A = data["GLIF3"]["V"].ravel()
 t = np.arange(0, len(A)) * sim_config["run"]["dt"]
 import matplotlib.pyplot as plt
 
-fig, axs = plt.subplots(1, 1)
+fig, axs = plt.subplots(2, 1)
 
 # GeNN
-axs.plot(t, A, label="GeNN")
-axs.set_ylabel("mV")
-axs.set_xlabel("ms")
+axs[0].plot(t, A, label="GeNN")
+axs[0].set_ylabel("mV")
+axs[0].set_xlabel("ms")
 
 # Nest
 from bmtk.utils.reports.compartment import CompartmentReport
@@ -246,7 +251,15 @@ B = report.data(node_id=0).ravel()
 t = (
     np.arange(0, len(B)) * sim_config["run"]["dt"]
 )  # TODO: uneven numbers between A and B?
-axs.plot(t, B, label="Nest")
-axs.legend()
+axs[0].plot(t, B, label="Nest")
+axs[0].legend()
 
+
+# Plot diff
+mask = np.arange(0, min(len(A), len(B)))[400000:600000]
+diff = A[mask] - B[mask]
+t = np.arange(0, len(diff))
+axs[1].plot(t, diff, label="GeNN-Nest")
+axs[1].set_ylabel("mV")
+axs[1].set_xlabel("ms")
 plt.show()

@@ -1,20 +1,30 @@
 # Replicate point_450glifs example with GeNN
-import sys
-
-sys.path.append("../../")
-from GLIF_models import GLIF3
-import glob
-import pprint
 import numpy as np
 import pandas as pd
 import json
 from pathlib import Path
 from sonata.circuit import File
 from sonata.reports.spike_trains import SpikeTrains
-from pygenn.genn_model import GeNNModel
+import pygenn
+import matplotlib.pyplot as plt
+from utilities import (
+    GLIF3,
+    get_dynamics_params,
+    spikes_list_to_start_end_times,
+    psc_Alpha,
+    construct_populations,
+    construct_synapses,
+    construct_id_conversion_df,
+)
 
 DYNAMICS_BASE_DIR = Path("./point_components/cell_models")
 SIM_CONFIG_PATH = Path("point_450glifs/config.simulation.json")
+LGN_V1_EDGE_CSV = Path("./point_450glifs/network/lgn_v1_edge_types.csv")
+V1_EDGE_CSV = Path("./point_450glifs/network/v1_v1_edge_types.csv")
+LGN_SPIKES_PATH = Path("./point_450glifs/inputs/lgn_spikes.h5")
+LGN_NODE_DIR = Path("./point_450glifs/network/lgn_node_types.csv")
+V1_NODE_CSV = Path("./point_450glifs/network/v1_node_types.csv")
+
 
 v1_net = File(
     data_files=[
@@ -42,13 +52,18 @@ print("Contains edges: {}".format(v1_net.has_edges))
 print("Contains nodes: {}".format(lgn_net.has_nodes))
 print("Contains edges: {}".format(lgn_net.has_edges))
 
-# Read CSV to get node types
-v1_df = pd.read_csv("point_450glifs/network/v1_node_types.csv", sep=" ")
 
-# Get all nodes of certain type
+### Create base model ###
+with open(SIM_CONFIG_PATH) as f:
+    sim_config = json.load(f)
+model = pygenn.genn_model.GeNNModel()
+model.dT = sim_config["run"]["dt"]
+
+### Construct v1 neuron populations ###
+v1_node_types_df = pd.read_csv(V1_NODE_CSV, sep=" ")
 v1_nodes = v1_net.nodes["v1"]
-v1_dynamics_files = v1_df["dynamics_params"].to_list()
-v1_model_names = v1_df["model_name"].to_list()
+v1_dynamics_files = v1_node_types_df["dynamics_params"].to_list()
+v1_model_names = v1_node_types_df["model_name"].to_list()
 v1_node_dict = {}
 for i, dynamics_file in enumerate(v1_dynamics_files):
     v1_nodes_with_model_name = [
@@ -56,66 +71,27 @@ for i, dynamics_file in enumerate(v1_dynamics_files):
     ]
     v1_node_dict[v1_model_names[i]] = v1_nodes_with_model_name
 
-# read dT
-with open(SIM_CONFIG_PATH) as f:
-    sim_config = json.load(f)
-
-# Create base model
-model = GeNNModel("double", "v1", backend="SingleThreadedCPU")
-model.dT = sim_config["run"]["dt"]
-
-# Construct V1 populations
+# Add populations
 pop_dict = {}
-for i, v1_model_name in enumerate(v1_model_names):
-    v1_dynamics_file = v1_dynamics_files[i]
-    v1_dynamics_path = Path(DYNAMICS_BASE_DIR, v1_dynamics_file)
-    with open(v1_dynamics_path) as f:
-        dynamics_params = json.load(f)
-    num_neurons = len(v1_node_dict[v1_model_name])
+pop_dict = construct_populations(
+    model,
+    pop_dict,
+    all_model_names=v1_model_names,
+    node_dict=v1_node_dict,
+    dynamics_base_dir=DYNAMICS_BASE_DIR,
+    node_types_df=v1_node_types_df,
+    neuron_class=GLIF3,
+    sim_config=sim_config,
+)
 
-    dynamics_params_renamed = {
-        "C": dynamics_params["C_m"],
-        "G": dynamics_params["g"],
-        "El": dynamics_params["E_L"],
-        "th_inf": dynamics_params["V_th"],
-        "dT": sim_config["run"]["dt"],
-        "V": dynamics_params["V_m"],
-        "spike_cut_length": round(dynamics_params["t_ref"] / sim_config["run"]["dt"]),
-        "refractory_countdown": -1,
-        "k": np.repeat(dynamics_params["asc_decay"], num_neurons).ravel(),
-        "r": np.repeat([1.0, 1.0], num_neurons).ravel(),
-        "ASC": np.repeat(dynamics_params["asc_init"], num_neurons).ravel(),
-        "asc_amp_array": np.repeat(dynamics_params["asc_amps"], num_neurons).ravel(),
-        "ASC_length": 2,
-    }
-    # tau_syn? used for synapses (see https://nest-simulator.readthedocs.io/en/v3.3/models/glif_psc.html#id13)
-    # see citation #2
+# Enable spike recording
+for k in pop_dict.keys():
+    pop_dict[k].spike_recording_enabled = True
 
-    neuron_class = GLIF3
-
-    params = {k: dynamics_params_renamed[k] for k in neuron_class.get_param_names()}
-    init = {k: dynamics_params_renamed[k] for k in ["V", "refractory_countdown"]}
-
-    pop_dict[v1_model_name] = model.add_neuron_population(
-        pop_name=v1_model_name,
-        num_neurons=num_neurons,
-        neuron=neuron_class,
-        param_space=params,
-        var_space=init,
-    )
-
-    # Add extra global params
-    # Assign extra global parameter values
-    for k in pop_dict[v1_model_name].extra_global_params.keys():
-        pop_dict[v1_model_name].set_extra_global_param(k, dynamics_params_renamed[k])
-
-    print("{} population added to model.".format(v1_model_name))
-
-# Add LGN Nodes
-lgn_df = pd.read_csv("point_450glifs/network/lgn_node_types.csv", sep=" ")
+### Construct LGN neuron populations ###
+lgn_node_types_df = pd.read_csv(LGN_NODE_DIR, sep=" ")
 lgn_nodes = lgn_net.nodes["lgn"]
-# dynamics_files = df["dynamics_params"].to_list()
-lgn_model_names = lgn_df["model_type"].to_list()
+lgn_model_names = lgn_node_types_df["model_type"].to_list()
 lgn_node_dict = {}
 for i, lgn_model_name in enumerate(lgn_model_names):
     nodes_with_model_name = [
@@ -123,37 +99,20 @@ for i, lgn_model_name in enumerate(lgn_model_names):
     ]
     lgn_node_dict[lgn_model_names[i]] = nodes_with_model_name
 
-# Load LGN spikes
-spikes = SpikeTrains.from_sonata("point_450glifs/inputs/lgn_spikes.h5")
+# Read LGN spike times
+spikes = SpikeTrains.from_sonata(LGN_SPIKES_PATH)
 spikes_df = spikes.to_dataframe()
-
-num_lgn = len(lgn_nodes)
+lgn_spiking_nodes = spikes_df["node_ids"].unique().tolist()
 spikes_list = []
-for n in range(0, num_lgn):
+for n in lgn_spiking_nodes:
     spikes_list.append(spikes_df[spikes_df["node_ids"] == n]["timestamps"].to_list())
+start_spike, end_spike, spike_times = spikes_list_to_start_end_times(
+    spikes_list
+)  # Convert to GeNN format
 
-
-def spikes_list_to_start_end_times(spikes_list):
-
-    spike_counts = [len(n) for n in spikes_list]
-
-    # Get start and end indices of each spike sources section
-    end_spike = np.cumsum(spike_counts)
-    start_spike = np.empty_like(end_spike)
-    start_spike[0] = 0
-    start_spike[1:] = end_spike[0:-1]
-
-    spike_times = np.hstack(spikes_list)
-    return start_spike, end_spike, spike_times
-
-
-start_spike, end_spike, spike_times = spikes_list_to_start_end_times(spikes_list)
-
-# Construct LGN population
+# Add population
 for i, lgn_model_name in enumerate(lgn_model_names):
     num_neurons = len(lgn_node_dict[lgn_model_name])
-
-    # Get spike data
 
     pop_dict[lgn_model_name] = model.add_neuron_population(
         lgn_model_name,
@@ -165,7 +124,11 @@ for i, lgn_model_name in enumerate(lgn_model_names):
 
     pop_dict[lgn_model_name].set_extra_global_param("spikeTimes", spike_times)
 
-# Dict: from node_id to population + idx (inside population)
+
+### Construct v1 to v1 synapses ###
+syn_dict = {}
+
+# First create a dict that maps the NEST node_id to the GeNN node_id. NEST numbers the neurons from 0 to num_neurons, whereas GeNN numbers neurons 0 to num_neurons_per_population. This matters when assigning synapses.
 v1_node_to_pop_idx = {}
 v1_pop_counts = {}
 for n in v1_nodes:
@@ -182,74 +145,44 @@ for n in v1_nodes:
 for k in v1_pop_counts.keys():
     v1_pop_counts[k] += 1
 
-
 # Add connections (synapses) between popluations
 v1_edges = v1_net.edges["v1_to_v1"]
+v1_edge_df = construct_id_conversion_df(
+    edges=v1_edges,
+    all_model_names=v1_model_names,
+    source_node_to_pop_idx_dict=v1_node_to_pop_idx,
+    target_node_to_pop_idx_dict=v1_node_to_pop_idx,
+)
+v1_syn_df = pd.read_csv(V1_EDGE_CSV, sep=" ")
+v1_edge_type_ids = v1_syn_df["edge_type_id"].tolist()
+v1_all_nsyns = v1_edge_df["nsyns"].unique()
+v1_all_nsyns.sort()
 
-# df - rows are synapses, columns are populations
-v1_edges_for_df = []
-for e in v1_edges:
-    e_dict = {}
-
-    # Add node_ids
-    e_dict["source_node_id"] = e.source_node_id
-    e_dict["target_node_id"] = e.target_node_id
-
-    # Populate empty indices for each population
-    for m in v1_model_names:
-        e_dict["source_" + m] = pd.NA
-        e_dict["target_" + m] = pd.NA
-
-    # Populate actual dicts
-    [m_name, idx] = v1_node_to_pop_idx[e.source_node_id]
-    e_dict["source_" + m_name] = idx
-
-    [m_name, idx] = v1_node_to_pop_idx[e.target_node_id]
-    e_dict["target_" + m_name] = idx
-
-    v1_edges_for_df.append(e_dict)
-v1_edge_df = pd.DataFrame(v1_edges_for_df)
-
-synapse_dict = {}
 for pop1 in v1_model_names:
     for pop2 in v1_model_names:
-        src = v1_edge_df[
-            ~v1_edge_df["source_" + pop1].isnull()
-        ]  # Get synapses that have correct source
-        src_tgt = src[~src["target_" + pop2].isnull()]
 
-        s_list = src_tgt["source_" + pop1].tolist()
-        t_list = src_tgt["target_" + pop2].tolist()
-        s_ini = {"g": -0.2}
-        ps_p = {
-            "tau": 1.0,
-            "E": -80.0,
-        }  # Decay time constant [ms]  # Reversal potential [mV]
-
-        # TODO: Add synaptic weight and delay
-        # TODO: Have alpha synapses
-        synapse_group_name = pop1 + "_to_" + pop2
-        synapse_group = model.add_synapse_population(
-            synapse_group_name,
-            "SPARSE_GLOBALG",
-            10,
-            pop1,
-            pop2,
-            "StaticPulse",
-            {},
-            s_ini,
-            {},
-            {},
-            "ExpCond",
-            ps_p,
-            {},
+        dynamics_params, _ = get_dynamics_params(
+            node_types_df=v1_node_types_df,
+            dynamics_base_dir=DYNAMICS_BASE_DIR,
+            sim_config=sim_config,
+            node_dict=v1_node_dict,
+            model_name=pop2,  # Pop2 is target, used for dynamics_params (tau)
         )
-        synapse_group.set_sparse_connections(np.array(s_list), np.array(t_list))
-        synapse_dict[synapse_group_name] = synapse_group
-        print("Synapses added for {} -> {}".format(pop1, pop2))
+        syn_dict = construct_synapses(
+            model=model,
+            syn_dict=syn_dict,
+            pop1=pop1,
+            pop2=pop2,
+            all_edge_type_ids=v1_edge_type_ids,
+            all_nsyns=v1_all_nsyns,
+            edge_df=v1_edge_df,
+            syn_df=v1_syn_df,
+            sim_config=sim_config,
+            dynamics_params=dynamics_params,
+        )
 
-
-# Add Synapses for LGN --> V1
+### Construct LGN to v1 synapses ###
+# First create a dict that maps the NEST node_id to the GeNN node_id. NEST numbers the neurons from 0 to num_neurons, whereas GeNN numbers neurons 0 to num_neurons_per_population. This matters when assigning synapses.
 lgn_node_to_pop_idx = {}
 lgn_pop_counts = {}
 for n in lgn_nodes:
@@ -268,103 +201,173 @@ for k in lgn_pop_counts.keys():
 
 # Add connections (synapses) between popluations
 lgn_edges = lgn_net.edges["lgn_to_v1"].get_group(0)
+lgn_edge_df = construct_id_conversion_df(
+    edges=lgn_edges,
+    all_model_names=v1_model_names,
+    source_node_to_pop_idx_dict=lgn_node_to_pop_idx,
+    target_node_to_pop_idx_dict=v1_node_to_pop_idx,
+)
 
-
-# df - rows are synapses, columns are populations
-lgn_edges_for_df = []
-for e in lgn_edges:
-    e_dict = {}
-
-    # Add node_ids
-    e_dict["source_node_id"] = e.source_node_id
-    e_dict["target_node_id"] = e.target_node_id
-
-    # Populate empty indices for each population
-    for m in lgn_model_names:
-        e_dict["source_" + m] = pd.NA
-    for m in v1_model_names:
-        e_dict["target_" + m] = pd.NA
-
-    # Populate actual dicts
-    [m_name, idx] = lgn_node_to_pop_idx[e.source_node_id]
-    e_dict["source_" + m_name] = idx
-
-    [m_name, idx] = v1_node_to_pop_idx[e.target_node_id]
-    e_dict["target_" + m_name] = idx
-
-    lgn_edges_for_df.append(e_dict)
-lgn_edge_df = pd.DataFrame(lgn_edges_for_df)
-
-
+lgn_syn_df = pd.read_csv(LGN_V1_EDGE_CSV, sep=" ")
+lgn_edge_type_ids = lgn_syn_df["edge_type_id"].tolist()
+lgn_all_nsyns = lgn_edge_df["nsyns"].unique()
+lgn_all_nsyns.sort()
 for pop1 in lgn_model_names:
     for pop2 in v1_model_names:
-        src = lgn_edge_df[
-            ~lgn_edge_df["source_" + pop1].isnull()
-        ]  # Get synapses that have correct source
-        src_tgt = src[~src["target_" + pop2].isnull()]
 
-        s_list = src_tgt["source_" + pop1].tolist()
-        t_list = src_tgt["target_" + pop2].tolist()
-        s_ini = {"g": -0.2}
-        ps_p = {
-            "tau": 1.0,
-            "E": -80.0,
-        }  # Decay time constant [ms]  # Reversal potential [mV]
-
-        # TODO: Add synaptic weight and delay
-        # TODO: Have alpha synapses
-        synapse_group_name = pop1 + "_to_" + pop2
-        synapse_group = model.add_synapse_population(
-            synapse_group_name,
-            "SPARSE_GLOBALG",
-            10,
-            pop1,
-            pop2,
-            "StaticPulse",
-            {},
-            s_ini,
-            {},
-            {},
-            "ExpCond",
-            ps_p,
-            {},
+        # Dynamics for v1, since this is the target
+        dynamics_params, _ = get_dynamics_params(
+            node_types_df=v1_node_types_df,
+            dynamics_base_dir=DYNAMICS_BASE_DIR,
+            sim_config=sim_config,
+            node_dict=v1_node_dict,
+            model_name=pop2,  # Pop2 is target, used for dynamics_params (tau)
         )
-        synapse_group.set_sparse_connections(np.array(s_list), np.array(t_list))
-        synapse_dict[synapse_group_name] = synapse_group
-        print("Synapses added for {} -> {}".format(pop1, pop2))
+        syn_dict = construct_synapses(
+            model=model,
+            syn_dict=syn_dict,
+            pop1=pop1,
+            pop2=pop2,
+            all_edge_type_ids=lgn_edge_type_ids,
+            all_nsyns=lgn_all_nsyns,
+            edge_df=lgn_edge_df,
+            syn_df=lgn_syn_df,
+            sim_config=sim_config,
+            dynamics_params=dynamics_params,
+        )
 
+### Run simulation ###
 
+NUM_RECORDING_TIMESTEPS = 1000
 model.build(force_rebuild=True)
-model.load()
+model.load(
+    num_recording_timesteps=NUM_RECORDING_TIMESTEPS
+)  # TODO: How big to calculate for GPU size?
+1
+num_steps = 3000000
+# var_list = ["V"]
+# data = {
+#     model_name: {k: np.zeros((v1_pop_counts[model_name], num_steps)) for k in var_list}
+#     for model_name in v1_model_names
+# }
+# view_dict = {}
+# for model_name in v1_model_names:
+#     pop = pop_dict[model_name]
+#     for v in var_list:
+#         view_dict[model_name] = {v: pop.vars[v].view}
 
-num_steps = 10000
-var_list = ["V"]
-data = {
-    model_name: {k: np.zeros((v1_pop_counts[model_name], num_steps)) for k in var_list}
-    for model_name in v1_model_names
-}
-view_dict = {}
+# Construct data for spike times
+spike_data = {}
 for model_name in v1_model_names:
-    pop = pop_dict[model_name]
-    for v in var_list:
-        view_dict[model_name] = {v: pop.vars[v].view}
+    spike_data[model_name] = {}
+    num_neurons = v1_pop_counts[model_name]
+    for i in range(num_neurons):
+        spike_data[model_name][i] = []  # List of spike times for each neuron
 
 
 for i in range(num_steps):
-    print(i)
+
     model.step_time()
 
-    for model_name in v1_model_names:
-        pop = pop_dict[model_name]
+    # for model_name in v1_model_names:
+    #     pop = pop_dict[model_name]
 
-        v_view = pop.vars["V"].view
-        for var_name in var_list:
-            # print(i, model_name, var_name, sep="\t")
-            # pop.pull_var_from_device("V")
-            view = view_dict[model_name][var_name]
-            output = view[:]
-            # print(output)
-            data[model_name][var_name][:, i] = output
+    #     v_view = pop.vars["V"].view
+    #     for var_name in var_list:
+    #         # print(i, model_name, var_name, sep="\t")
+    #         pop.pull_var_from_device(var_name)
+    #         view = view_dict[model_name][var_name]
+    #         output = view[:]
+    #         # print(output)
+    #         data[model_name][var_name][:, i] = output
 
+    # Only collect full BUFFER
+    if i % NUM_RECORDING_TIMESTEPS == 0 and i != 0:
+
+        # Record spikes
+        print(i)
+        model.pull_recording_buffers_from_device()
+        for model_name in v1_model_names:
+            pop = pop_dict[model_name]
+            spk_times, spk_ids = pop.spike_recording_data
+            for j, id in enumerate(spk_ids):
+                spike_data[model_name][id].append(spk_times[j])
+
+    # for model_name in v1_model_names:
+    #     pop = pop_dict[model_name]
+
+    #     pop.pull_current_spikes_from_device()
+    #     spk = pop.current_spikes
+    #     if len(spk) > 0:
+    #         print(spk)
+
+# Convert to BMTK node_ids
+spike_data_BMTK_ids = {}
+for BMTK_id, (model_name, model_id) in v1_node_to_pop_idx.items():
+    spike_data_BMTK_ids[BMTK_id] = spike_data[model_name][model_id]
+
+v1_node_to_pop_idx_inv = {}
+for BMTK_id, pop_id_string in v1_node_to_pop_idx.items():
+    v1_node_to_pop_idx_inv[str(pop_id_string)] = BMTK_id
+
+# Plot firing rates
+fig, axs = plt.subplots(1, 1)
+v1_model_names.sort()
+for model_name in v1_model_names:
+    firing_rates = []
+    ids = []
+    for id, times in spike_data[model_name].items():
+
+        # Convert to BMTK id
+        BMTK_id = v1_node_to_pop_idx_inv[str([model_name, id])]
+        ids.append(BMTK_id)
+
+        # Calculate firing rate
+        num_spikes = len(times)
+        period_length = num_steps / 1e6  # s
+        firing_rate = num_spikes / period_length
+        firing_rates.append(firing_rate)
+    axs.plot(ids, firing_rates, "o", label=model_name)
+
+axs.set_ylabel("Firing Rate (hz)")
+axs.set_xlabel("node_id")
+axs.legend()
+plt.show()
+
+
+# # Plot firing rates
+# fig, axs = plt.subplots(1, 1)
+# for BMTK_id, times in spike_data_BMTK_ids.items():
+#     num_spikes = len(times)
+#     period_length = num_steps / 1e6  # s
+#     firing_rate = num_spikes / period_length
+
+#     axs.plot(BMTK_id, firing_rate, "k.")
+
+# axs.set_ylabel("Firing Rate (hz)")
+# axs.set_xlabel("node_id")
+# plt.show()
+
+
+# # Plot voltage
+# import matplotlib.pyplot as plt
+
+# fig, axs = plt.subplots(1, 1)
+
+# # GeNN
+# axs.set_ylabel("mV")
+# axs.set_xlabel("ms")
+
+# for k in data.keys():
+
+#     V = data[k]["V"]
+#     num_neurons, num_steps = V.shape
+#     num_neurons = 1
+#     t = np.arange(0, num_steps) * sim_config["run"]["dt"]
+#     t = np.repeat(t.reshape(1, -1), num_neurons, axis=0)
+
+#     for i in range(num_neurons):
+#         axs.plot(t[i, :], V[i, :], label="GeNN")
+# plt.show()
 
 print("Simulation complete.")

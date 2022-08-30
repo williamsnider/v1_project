@@ -200,7 +200,7 @@ def build_lgn_network(v1):
     lgn.add_edges(
         target=v1.nodes(ei="e", placement="inner"),
         source=lgn.nodes(),
-        connection_rule=lambda *_: 1,  # CHECK THIS: #np.random.randint(0, 5),
+        connection_rule=lambda *_: 15,  # CHECK THIS: #np.random.randint(0, 5),
         dynamics_params="LGN_to_GLIF.json",
         model_template="static_synapse",
         delay=2.0,

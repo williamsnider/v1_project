@@ -33,8 +33,8 @@
     }
   },
   "network": "config.circuit.json",
-  "config_path": "/home/williamsnider/Code/v1_project/bmtk/2glifs/point_1glifs/config.simulation.json",
-  "config_dir": "/home/williamsnider/Code/v1_project/bmtk/2glifs/point_1glifs",
+  "config_path": "/home/williamsnider/Code/v1_project/bmtk/1glif/point_1glifs/config.simulation.json",
+  "config_dir": "/home/williamsnider/Code/v1_project/bmtk/1glif/point_1glifs",
   "components": {
     "point_neuron_models_dir": "./../point_components/cell_models",
     "synaptic_models_dir": "./../point_components/synaptic_models"

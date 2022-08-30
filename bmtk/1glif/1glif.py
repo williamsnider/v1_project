@@ -11,17 +11,11 @@ GLIF3_dynamics_file = Path("593618144_glif_lif_asc_psc.json")
 SYN_PATH = Path("./point_1glifs/network/lgn_v1_edge_types.csv")
 LGN_SPIKES_PATH = Path("./point_1glifs/inputs/lgn_spikes.h5")
 
-
+# TODO: Resolve difference in voltage during refractory period; BMTK rounds down to third decimal? This causes problems when many spikes occur at the same time.
+# This has V_reset, different than GLIF3 in GLIF_models.py
 GLIF3 = pygenn.genn_model.create_custom_neuron_class(
     "GLIF3",
-    param_names=[
-        "C",
-        "G",
-        "El",
-        "spike_cut_length",
-        "th_inf",
-        "ASC_length",
-    ],
+    param_names=["C", "G", "El", "spike_cut_length", "th_inf", "ASC_length", "V_reset"],
     var_name_types=[("V", "double"), ("refractory_countdown", "int")],
     extra_global_params=[
         ("ASC", "scalar*"),
@@ -64,7 +58,7 @@ GLIF3 = pygenn.genn_model.create_custom_neuron_class(
     """,
     threshold_condition_code="$(V) > $(th_inf)",
     reset_code="""
-    $(V)=0;
+    $(V)=$(V_reset);
     for (int ii=0; ii<$(ASC_length); ii++){
         int idx = $(id)*((int)$(ASC_length))+ii;
         $(ASC)[idx] = $(asc_amp_array)[idx] + $(ASC)[idx] * $(r)[idx] * exp(-($(k)[idx] * DT * $(spike_cut_length)));
@@ -138,6 +132,7 @@ dynamics_params_renamed = {
     "asc_amp_array": np.repeat(dynamics_params["asc_amps"], num_GLIF).ravel()
     / 1000,  # pA -> nA
     "ASC_length": 2,
+    "V_reset": np.round(dynamics_params["V_reset"], 3),  # BMTK rounds to 3rd decimal
 }
 
 params = {k: dynamics_params_renamed[k] for k in GLIF3.get_param_names()}
@@ -177,6 +172,7 @@ delay_steps = round(
     syn_df[syn_df["edge_type_id"] == 100]["delay"][0] / sim_config["run"]["dt"]
 )  # delay (ms) -> delay (steps)
 weight = syn_df[syn_df["edge_type_id"] == 100]["syn_weight"][0] / 1e3  # nS -> uS
+weight *= 15  # 2 synapses
 syn_dict = {}
 psc_Alpha_params = {"tau": dynamics_params["tau_syn"][0]}  # TODO: Always port 0?
 psc_Alpha_init = {"x": 0.0}  # TODO check 0
@@ -237,7 +233,9 @@ import matplotlib.pyplot as plt
 fig, axs = plt.subplots(2, 1)
 
 # GeNN
-axs[0].plot(t, A, label="GeNN")
+mask = np.ones(t.shape, dtype=bool)
+# mask[912150:912200] = True
+axs[0].plot(t[mask], A[mask], label="GeNN")
 axs[0].set_ylabel("mV")
 axs[0].set_xlabel("ms")
 
@@ -251,12 +249,15 @@ B = report.data(node_id=0).ravel()
 t = (
     np.arange(0, len(B)) * sim_config["run"]["dt"]
 )  # TODO: uneven numbers between A and B?
-axs[0].plot(t, B, label="Nest")
+mask = np.ones(t.shape, dtype=bool)
+# mask[912150:912200] = True
+
+axs[0].plot(t[mask], B[mask], label="Nest")
 axs[0].legend()
 
 
 # Plot diff
-mask = np.arange(0, min(len(A), len(B)))[400000:600000]
+mask = np.arange(0, min(len(A), len(B)))  # [912150:912200]
 diff = A[mask] - B[mask]
 t = np.arange(0, len(diff))
 axs[1].plot(t, diff, label="GeNN-Nest")

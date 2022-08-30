@@ -1,18 +1,5 @@
-import pygenn.genn_model
-
-pygenn.genn_model.create_custom_postsynaptic_class(
-    class_name="Alpha",
-    decay_code="""
-    $(x) = exp(-DT/$(tau)) * ((DT * $(inSyn) * exp(1.0f) / $(tau)) + $(x));
-    $(inSyn)*=exp(-DT/$(tau));
-    """,
-    apply_input_code="$(Isyn) += $(x);",
-    var_name_types=[("x", "scalar")],
-    param_names=("tau"),
-)
-
-# pygenn.genn_model.create_custom_neuron_class()
-
-model = pygenn.genn_model.GeNNModel()
-
-model.add_synapse_population()
+# Filter by source, target, and edge_type_id
+src = lgn_edge_df[lgn_edge_df["source_" + pop1] == 0]
+src_tgt = src[src["target_" + pop2] == 11]
+src_tgt_id = src_tgt[src_tgt["edge_type_id"] == edge_type_id]
+src_tgt_id_nsyns = src_tgt_id[src_tgt_id["nsyns"] == nsyn]

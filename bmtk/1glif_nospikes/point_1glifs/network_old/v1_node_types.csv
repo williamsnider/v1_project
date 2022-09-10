@@ -1,0 +1,2 @@
+node_type_id ei model_template model_name dynamics_params model_type placement
+100 e nest:glif_psc Scnn1a 593618144_glif_lif_asc_psc.json point_neuron inner

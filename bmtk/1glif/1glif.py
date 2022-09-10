@@ -15,22 +15,32 @@ LGN_SPIKES_PATH = Path("./point_1glifs/inputs/lgn_spikes.h5")
 # This has V_reset, different than GLIF3 in GLIF_models.py
 GLIF3 = pygenn.genn_model.create_custom_neuron_class(
     "GLIF3",
-    param_names=["C", "G", "El", "spike_cut_length", "th_inf", "ASC_length", "V_reset"],
+    param_names=[
+        "C",
+        "G",
+        "El",
+        "spike_cut_length",
+        "th_inf",
+        "ASC_length",
+        "V_reset",
+    ],
     var_name_types=[("V", "double"), ("refractory_countdown", "int")],
     extra_global_params=[
         ("ASC", "scalar*"),
-        ("k", "scalar*"),
         ("asc_amp_array", "scalar*"),
-        ("r", "scalar*"),
+        ("asc_stable_coeff", "scalar*"),
+        ("asc_decay_rates", "scalar*"),
+        ("asc_refractory_decay_rates", "scalar*"),
     ],
     sim_code="""
     double sum_of_ASC = 0.0;
-    
+
     // Sum after spike currents
     for (int ii=0; ii<$(ASC_length); ii++){
         int idx = $(id)*((int)$(ASC_length))+ii;
-        sum_of_ASC += $(ASC)[idx];
+        sum_of_ASC += $(ASC)[idx]*$(asc_stable_coeff)[idx];
         }
+
     // Voltage
     if ($(refractory_countdown) > 0) {
         $(V) += 0.0;
@@ -38,30 +48,33 @@ GLIF3 = pygenn.genn_model.create_custom_neuron_class(
     else {
         $(V)+=1/$(C)*($(Isyn)+sum_of_ASC-$(G)*($(V)-$(El)))*DT;
     }
+
     // ASCurrents
     if ($(refractory_countdown) > 0) {
         for (int ii=0; ii<$(ASC_length); ii++){
-            int idx = $(id)*((int)$(ASC_length))+ii;
-            $(ASC)[idx] += 0.0;
-            }
+           int idx = $(id)*((int)$(ASC_length))+ii;
+           $(ASC)[idx] += 0.0;
+          }
     }
     else {
-        for (int ii=0; ii<$(ASC_length); ii++){
-            int idx = $(id)*((int)$(ASC_length))+ii;
-            $(ASC)[idx] = $(ASC)[idx] * exp(-$(k)[idx]*DT);
-            }
+    for (int ii=0; ii<$(ASC_length); ii++){
+       int idx = $(id)*((int)$(ASC_length))+ii;
+        $(ASC)[idx] = $(ASC)[idx] * $(asc_decay_rates)[idx];
+       }
     }
     // Decrement refractory_countdown by 1; Do not decrement past -1
     if ($(refractory_countdown) > -1) {
         $(refractory_countdown) -= 1;
     }
+
+
     """,
     threshold_condition_code="$(V) > $(th_inf)",
     reset_code="""
     $(V)=$(V_reset);
     for (int ii=0; ii<$(ASC_length); ii++){
         int idx = $(id)*((int)$(ASC_length))+ii;
-        $(ASC)[idx] = $(asc_amp_array)[idx] + $(ASC)[idx] * $(r)[idx] * exp(-($(k)[idx] * DT * $(spike_cut_length)));
+        $(ASC)[idx] = $(asc_amp_array)[idx] + $(ASC)[idx] * $(asc_refractory_decay_rates)[idx];
         }
     $(refractory_countdown) = $(spike_cut_length);
     """,
@@ -115,6 +128,13 @@ with open(v1_dynamics_path) as f:
     dynamics_params = json.load(f)
 num_GLIF = 1
 
+DT = sim_config["run"]["dt"]
+asc_decay = np.repeat(dynamics_params["asc_decay"], num_GLIF).ravel()
+r = np.repeat([1.0, 1.0], num_GLIF)  # NEST default
+t_ref = dynamics_params["t_ref"]
+asc_decay_rates = np.exp(-asc_decay * sim_config["run"]["dt"])
+asc_stable_coeff = (1.0 / asc_decay / DT) * (1.0 - asc_decay_rates)
+asc_refractory_decay_rates = r * np.exp(-asc_decay * t_ref)
 
 dynamics_params_renamed = {
     "C": dynamics_params["C_m"] / 1000,  # pF -> nF
@@ -125,14 +145,22 @@ dynamics_params_renamed = {
     "V": dynamics_params["V_m"],
     "spike_cut_length": round(dynamics_params["t_ref"] / sim_config["run"]["dt"]),
     "refractory_countdown": -1,
-    "k": 1
-    / np.repeat(dynamics_params["asc_decay"], num_GLIF).ravel(),  # TODO: Reciprocal?
-    "r": np.repeat([1.0, 1.0], num_GLIF).ravel(),
+    # "k": 1
+    # / (
+    #     np.repeat(dynamics_params["asc_decay"], num_GLIF).ravel()
+    #     * dynamics_params["t_ref"]
+    #     * 10
+    # ),  # TODO: Reciprocal?
+    "k": np.repeat(dynamics_params["asc_decay"], num_GLIF).ravel(),  # TODO: Reciprocal?
+    "r": np.repeat([1.0, 1.0], num_GLIF).ravel(),  # NEST default
     "ASC": np.repeat(dynamics_params["asc_init"], num_GLIF).ravel() / 1000,  # pA -> nA
     "asc_amp_array": np.repeat(dynamics_params["asc_amps"], num_GLIF).ravel()
     / 1000,  # pA -> nA
     "ASC_length": 2,
     "V_reset": np.round(dynamics_params["V_reset"], 3),  # BMTK rounds to 3rd decimal
+    "asc_stable_coeff": asc_stable_coeff,
+    "asc_decay_rates": asc_decay_rates,
+    "asc_refractory_decay_rates": asc_refractory_decay_rates,
 }
 
 params = {k: dynamics_params_renamed[k] for k in GLIF3.get_param_names()}
@@ -172,7 +200,7 @@ delay_steps = round(
     syn_df[syn_df["edge_type_id"] == 100]["delay"][0] / sim_config["run"]["dt"]
 )  # delay (ms) -> delay (steps)
 weight = syn_df[syn_df["edge_type_id"] == 100]["syn_weight"][0] / 1e3  # nS -> uS
-weight *= 15  # 2 synapses
+weight *= 15  # 15 synapses
 syn_dict = {}
 psc_Alpha_params = {"tau": dynamics_params["tau_syn"][0]}  # TODO: Always port 0?
 psc_Alpha_init = {"x": 0.0}  # TODO check 0
@@ -227,6 +255,7 @@ for i in range(num_steps):
 
 # Plot voltage
 A = data["GLIF3"]["V"].ravel()
+# A = np.round(A * 1000) / 1000
 t = np.arange(0, len(A)) * sim_config["run"]["dt"]
 import matplotlib.pyplot as plt
 
@@ -234,7 +263,8 @@ fig, axs = plt.subplots(2, 1)
 
 # GeNN
 mask = np.ones(t.shape, dtype=bool)
-# mask[912150:912200] = True
+# mask = np.zeros(t.shape, dtype=bool)
+# mask[447500:449700] = True
 axs[0].plot(t[mask], A[mask], label="GeNN")
 axs[0].set_ylabel("mV")
 axs[0].set_xlabel("ms")
@@ -250,14 +280,20 @@ t = (
     np.arange(0, len(B)) * sim_config["run"]["dt"]
 )  # TODO: uneven numbers between A and B?
 mask = np.ones(t.shape, dtype=bool)
-# mask[912150:912200] = True
+# mask = np.zeros(t.shape, dtype=bool)
+# mask[447500:449700] = True
 
 axs[0].plot(t[mask], B[mask], label="Nest")
+
+# Plot vertical lines
+for spk in spike_times:
+    axs[0].axvline(x=spk + delay_steps / 1000, color="k")
+axs[0].axvline(x=spk + delay_steps / 1000, color="k", label="LGN Spike")
 axs[0].legend()
 
-
 # Plot diff
-mask = np.arange(0, min(len(A), len(B)))  # [912150:912200]
+mask = np.arange(0, min(len(A), len(B)))  # [447500:449700]  # [447500:447700]
+# mask = np.ones(t.shape, dtype=bool)
 diff = A[mask] - B[mask]
 t = np.arange(0, len(diff))
 axs[1].plot(t, diff, label="GeNN-Nest")

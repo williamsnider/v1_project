@@ -1,0 +1,3 @@
+make: Entering directory '/home/williamsnider/Code/v1_project/bmtk/1glif/GeNNModel_CODE'
+make: Leaving directory '/home/williamsnider/Code/v1_project/bmtk/1glif/GeNNModel_CODE'
+swig/python detected a memory leak of type 'CodeGenerator::SingleThreadedCPU::Backend *', no destructor found.

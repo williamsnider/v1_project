@@ -1,11 +1,11 @@
-2022-08-29 20:00:38,544 [INFO] Created log file
-2022-08-29 20:00:38,553 [INFO] Batch processing nodes for v1/0.
-2022-08-29 20:00:38,558 [INFO] Batch processing nodes for lgn/0.
-2022-08-29 20:00:38,564 [INFO] Setting up output directory
-2022-08-29 20:00:38,564 [INFO] Building cells.
-2022-08-29 20:00:38,566 [INFO] Building recurrent connections
-2022-08-29 20:00:38,566 [INFO] Build virtual cell stimulations for LGN_spikes
-2022-08-29 20:00:38,765 [INFO] Network created.
-2022-08-29 20:00:38,767 [INFO] Starting Simulation
-2022-08-29 20:00:41,704 [INFO] Simulation finished, finalizing results.
-2022-08-29 20:00:42,297 [INFO] Done.
+2022-08-30 10:32:55,106 [INFO] Created log file
+2022-08-30 10:32:55,114 [INFO] Batch processing nodes for v1/0.
+2022-08-30 10:32:55,119 [INFO] Batch processing nodes for lgn/0.
+2022-08-30 10:32:55,125 [INFO] Setting up output directory
+2022-08-30 10:32:55,126 [INFO] Building cells.
+2022-08-30 10:32:55,127 [INFO] Building recurrent connections
+2022-08-30 10:32:55,127 [INFO] Build virtual cell stimulations for LGN_spikes
+2022-08-30 10:32:55,319 [INFO] Network created.
+2022-08-30 10:32:55,321 [INFO] Starting Simulation
+2022-08-30 10:32:58,334 [INFO] Simulation finished, finalizing results.
+2022-08-30 10:32:58,923 [INFO] Done.

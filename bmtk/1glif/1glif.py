@@ -21,61 +21,49 @@ GLIF3 = pygenn.genn_model.create_custom_neuron_class(
         "El",
         "spike_cut_length",
         "th_inf",
-        "ASC_length",
         "V_reset",
+        "asc_amp_array_1",
+        "asc_amp_array_2",
+        "asc_stable_coeff_1",
+        "asc_stable_coeff_2",
+        "asc_decay_rates_1",
+        "asc_decay_rates_2",
+        "asc_refractory_decay_rates_1",
+        "asc_refractory_decay_rates_2",
     ],
-    var_name_types=[("V", "double"), ("refractory_countdown", "int")],
-    extra_global_params=[
-        ("ASC", "scalar*"),
-        ("asc_amp_array", "scalar*"),
-        ("asc_stable_coeff", "scalar*"),
-        ("asc_decay_rates", "scalar*"),
-        ("asc_refractory_decay_rates", "scalar*"),
+    var_name_types=[
+        ("V", "double"),
+        ("refractory_countdown", "int"),
+        ("ASC_1", "scalar"),
+        ("ASC_2", "scalar"),
     ],
     sim_code="""
-    double sum_of_ASC = 0.0;
 
     // Sum after spike currents
-    for (int ii=0; ii<$(ASC_length); ii++){
-        int idx = $(id)*((int)$(ASC_length))+ii;
-        sum_of_ASC += $(ASC)[idx]*$(asc_stable_coeff)[idx];
-        }
+    double sum_of_ASC = $(ASC_1)*$(asc_stable_coeff_1) + $(ASC_2)*$(asc_stable_coeff_2);
 
     // Voltage
-    if ($(refractory_countdown) > 0) {
-        $(V) += 0.0;
-    }
-    else {
+    if ($(refractory_countdown) <= 0) {
         $(V)+=1/$(C)*($(Isyn)+sum_of_ASC-$(G)*($(V)-$(El)))*DT;
     }
 
     // ASCurrents
-    if ($(refractory_countdown) > 0) {
-        for (int ii=0; ii<$(ASC_length); ii++){
-           int idx = $(id)*((int)$(ASC_length))+ii;
-           $(ASC)[idx] += 0.0;
-          }
-    }
-    else {
-    for (int ii=0; ii<$(ASC_length); ii++){
-       int idx = $(id)*((int)$(ASC_length))+ii;
-        $(ASC)[idx] = $(ASC)[idx] * $(asc_decay_rates)[idx];
-       }
-    }
+    if ($(refractory_countdown) <= 0) {
+        $(ASC_1) *= $(asc_decay_rates_1);
+        $(ASC_2) *= $(asc_decay_rates_2);
+        }
+
+
     // Decrement refractory_countdown by 1; Do not decrement past -1
     if ($(refractory_countdown) > -1) {
         $(refractory_countdown) -= 1;
     }
-
-
     """,
     threshold_condition_code="$(V) > $(th_inf)",
     reset_code="""
     $(V)=$(V_reset);
-    for (int ii=0; ii<$(ASC_length); ii++){
-        int idx = $(id)*((int)$(ASC_length))+ii;
-        $(ASC)[idx] = $(asc_amp_array)[idx] + $(ASC)[idx] * $(asc_refractory_decay_rates)[idx];
-        }
+    $(ASC_1) = $(asc_amp_array_1) + $(ASC_1) * $(asc_refractory_decay_rates_1);
+    $(ASC_2) = $(asc_amp_array_2) + $(ASC_2) * $(asc_refractory_decay_rates_2);
     $(refractory_countdown) = $(spike_cut_length);
     """,
 )
@@ -141,30 +129,31 @@ dynamics_params_renamed = {
     "G": dynamics_params["g"] / 1000,  # nS -> uS
     "El": dynamics_params["E_L"],
     "th_inf": dynamics_params["V_th"],
-    "dT": sim_config["run"]["dt"],
+    "dT": DT,
     "V": dynamics_params["V_m"],
-    "spike_cut_length": round(dynamics_params["t_ref"] / sim_config["run"]["dt"]),
+    "spike_cut_length": round(dynamics_params["t_ref"] / DT),
     "refractory_countdown": -1,
-    # "k": 1
-    # / (
-    #     np.repeat(dynamics_params["asc_decay"], num_GLIF).ravel()
-    #     * dynamics_params["t_ref"]
-    #     * 10
-    # ),  # TODO: Reciprocal?
-    "k": np.repeat(dynamics_params["asc_decay"], num_GLIF).ravel(),  # TODO: Reciprocal?
-    "r": np.repeat([1.0, 1.0], num_GLIF).ravel(),  # NEST default
-    "ASC": np.repeat(dynamics_params["asc_init"], num_GLIF).ravel() / 1000,  # pA -> nA
-    "asc_amp_array": np.repeat(dynamics_params["asc_amps"], num_GLIF).ravel()
-    / 1000,  # pA -> nA
-    "ASC_length": 2,
-    "V_reset": np.round(dynamics_params["V_reset"], 3),  # BMTK rounds to 3rd decimal
+    "V_reset": dynamics_params["V_reset"],  # BMTK rounds to 3rd decimal
+    "ASC_1": dynamics_params["asc_init"][0] / 1000,  # pA -> nA
+    "ASC_2": dynamics_params["asc_init"][1] / 1000,  # pA -> nA
     "asc_stable_coeff": asc_stable_coeff,
     "asc_decay_rates": asc_decay_rates,
     "asc_refractory_decay_rates": asc_refractory_decay_rates,
+    "asc_amp_array_1": dynamics_params["asc_amps"][0] / 1000,  # pA->nA
+    "asc_amp_array_2": dynamics_params["asc_amps"][1] / 1000,  # pA->nA
+    "asc_stable_coeff_1": asc_stable_coeff[0],
+    "asc_stable_coeff_2": asc_stable_coeff[1],
+    "asc_decay_rates_1": asc_decay_rates[0],
+    "asc_decay_rates_2": asc_decay_rates[1],
+    "asc_refractory_decay_rates_1": asc_refractory_decay_rates[0],
+    "asc_refractory_decay_rates_2": asc_refractory_decay_rates[1],
 }
 
 params = {k: dynamics_params_renamed[k] for k in GLIF3.get_param_names()}
-init = {k: dynamics_params_renamed[k] for k in ["V", "refractory_countdown"]}
+init = {
+    k: dynamics_params_renamed[k]
+    for k in ["V", "refractory_countdown", "ASC_1", "ASC_2"]
+}
 
 pop_dict["GLIF3"] = model.add_neuron_population(
     pop_name="GLIF3",

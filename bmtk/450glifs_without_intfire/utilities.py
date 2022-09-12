@@ -6,6 +6,7 @@ from sonata.circuit import File
 from sonata.reports.spike_trains import SpikeTrains
 import pygenn
 import matplotlib.pyplot as plt
+import pickle
 
 GLIF3 = pygenn.genn_model.create_custom_neuron_class(
     "GLIF3",
@@ -258,35 +259,64 @@ def construct_synapses(
 
 
 def construct_id_conversion_df(
-    edges, all_model_names, source_node_to_pop_idx_dict, target_node_to_pop_idx_dict
+    edges,
+    all_model_names,
+    source_node_to_pop_idx_dict,
+    target_node_to_pop_idx_dict,
+    filename,
 ):
-    edges_for_df = []
-    for e in edges:
-        e_dict = {}
 
-        # Add node_ids
-        e_dict["source_node_id"] = e.source_node_id
-        e_dict["target_node_id"] = e.target_node_id
+    # Load pickle if already constructed
+    if Path(filename).exists():
+        with open(filename, "rb") as f:
+            v1_edge_df = pickle.load(f)
+        print("Loaded previously constructed id conversion df.")
+    else:
+        num_edges = len(edges)
+        edges_for_df = []
+        for i, e in enumerate(edges):
 
-        # Populate empty indices for each population
-        for m in all_model_names:
-            e_dict["source_" + m] = pd.NA
-            e_dict["target_" + m] = pd.NA
+            # Print status
+            if i % 1000 == 0:
+                print(
+                    "Constructing id conversion df: {}%".format(
+                        np.round(i / num_edges * 100)
+                    ),
+                    end="\r",
+                )
 
-        # Populate actual dicts
-        [m_name, idx] = source_node_to_pop_idx_dict[e.source_node_id]
-        e_dict["source_" + m_name] = idx
+            e_dict = {}
 
-        [m_name, idx] = target_node_to_pop_idx_dict[e.target_node_id]
-        e_dict["target_" + m_name] = idx
+            # Add node_ids
+            e_dict["source_node_id"] = e.source_node_id
+            e_dict["target_node_id"] = e.target_node_id
 
-        # Add edge type id, which is used to get correct synaptic weight/delay
-        # TODO: Is dynamics_params e.g. e2i.json used?
-        e_dict["edge_type_id"] = e.edge_type_id
+            # Populate empty indices for each population
+            for m in all_model_names:
+                e_dict["source_" + m] = pd.NA
+                e_dict["target_" + m] = pd.NA
 
-        # Add number of synapses
-        e_dict["nsyns"] = e["nsyns"]
+            # Populate actual dicts
+            [m_name, idx] = source_node_to_pop_idx_dict[e.source_node_id]
+            e_dict["source_" + m_name] = idx
 
-        edges_for_df.append(e_dict)
-    v1_edge_df = pd.DataFrame(edges_for_df)
+            [m_name, idx] = target_node_to_pop_idx_dict[e.target_node_id]
+            e_dict["target_" + m_name] = idx
+
+            # Add edge type id, which is used to get correct synaptic weight/delay
+            # TODO: Is dynamics_params e.g. e2i.json used?
+            e_dict["edge_type_id"] = e.edge_type_id
+
+            # Add number of synapses
+            e_dict["nsyns"] = e["nsyns"]
+
+            edges_for_df.append(e_dict)
+        v1_edge_df = pd.DataFrame(edges_for_df)
+
+        # Save as pickle file
+        if filename.parent.exists() == False:
+            Path.mkdir(filename.parent, parents=True)
+        with open(filename, "wb") as f:
+            pickle.dump(v1_edge_df, f)
+
     return v1_edge_df

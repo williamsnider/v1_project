@@ -24,6 +24,10 @@ V1_EDGE_CSV = Path("./point_450glifs/network/v1_v1_edge_types.csv")
 LGN_SPIKES_PATH = Path("./point_450glifs/inputs/lgn_spikes.h5")
 LGN_NODE_DIR = Path("./point_450glifs/network/lgn_node_types.csv")
 V1_NODE_CSV = Path("./point_450glifs/network/v1_node_types.csv")
+V1_ID_CONVERSION_FILENAME = Path(".", "pkl_data", "v1_edge_df.pkl")
+LGN_ID_CONVERSION_FILENAME = Path(".", "pkl_data", "lgn_edge_df.pkl")
+NUM_RECORDING_TIMESTEPS = 10000
+num_steps = 3000000
 
 
 v1_net = File(
@@ -56,7 +60,7 @@ print("Contains edges: {}".format(lgn_net.has_edges))
 ### Create base model ###
 with open(SIM_CONFIG_PATH) as f:
     sim_config = json.load(f)
-model = pygenn.genn_model.GeNNModel()
+model = pygenn.genn_model.GeNNModel(backend="CUDA")
 model.dT = sim_config["run"]["dt"]
 
 ### Construct v1 neuron populations ###
@@ -152,6 +156,7 @@ v1_edge_df = construct_id_conversion_df(
     all_model_names=v1_model_names,
     source_node_to_pop_idx_dict=v1_node_to_pop_idx,
     target_node_to_pop_idx_dict=v1_node_to_pop_idx,
+    filename=V1_ID_CONVERSION_FILENAME,
 )
 v1_syn_df = pd.read_csv(V1_EDGE_CSV, sep=" ")
 v1_edge_type_ids = v1_syn_df["edge_type_id"].tolist()
@@ -206,6 +211,7 @@ lgn_edge_df = construct_id_conversion_df(
     all_model_names=v1_model_names,
     source_node_to_pop_idx_dict=lgn_node_to_pop_idx,
     target_node_to_pop_idx_dict=v1_node_to_pop_idx,
+    filename=LGN_ID_CONVERSION_FILENAME,
 )
 
 lgn_syn_df = pd.read_csv(LGN_V1_EDGE_CSV, sep=" ")
@@ -237,24 +243,11 @@ for pop1 in lgn_model_names:
         )
 
 ### Run simulation ###
-
-NUM_RECORDING_TIMESTEPS = 1000
 model.build(force_rebuild=True)
 model.load(
     num_recording_timesteps=NUM_RECORDING_TIMESTEPS
 )  # TODO: How big to calculate for GPU size?
 1
-num_steps = 3000000
-# var_list = ["V"]
-# data = {
-#     model_name: {k: np.zeros((v1_pop_counts[model_name], num_steps)) for k in var_list}
-#     for model_name in v1_model_names
-# }
-# view_dict = {}
-# for model_name in v1_model_names:
-#     pop = pop_dict[model_name]
-#     for v in var_list:
-#         view_dict[model_name] = {v: pop.vars[v].view}
 
 # Construct data for spike times
 spike_data = {}
@@ -269,18 +262,6 @@ for i in range(num_steps):
 
     model.step_time()
 
-    # for model_name in v1_model_names:
-    #     pop = pop_dict[model_name]
-
-    #     v_view = pop.vars["V"].view
-    #     for var_name in var_list:
-    #         # print(i, model_name, var_name, sep="\t")
-    #         pop.pull_var_from_device(var_name)
-    #         view = view_dict[model_name][var_name]
-    #         output = view[:]
-    #         # print(output)
-    #         data[model_name][var_name][:, i] = output
-
     # Only collect full BUFFER
     if i % NUM_RECORDING_TIMESTEPS == 0 and i != 0:
 
@@ -292,14 +273,6 @@ for i in range(num_steps):
             spk_times, spk_ids = pop.spike_recording_data
             for j, id in enumerate(spk_ids):
                 spike_data[model_name][id].append(spk_times[j])
-
-    # for model_name in v1_model_names:
-    #     pop = pop_dict[model_name]
-
-    #     pop.pull_current_spikes_from_device()
-    #     spk = pop.current_spikes
-    #     if len(spk) > 0:
-    #         print(spk)
 
 # Convert to BMTK node_ids
 spike_data_BMTK_ids = {}
@@ -333,41 +306,5 @@ axs.set_ylabel("Firing Rate (hz)")
 axs.set_xlabel("node_id")
 axs.legend()
 plt.show()
-
-
-# # Plot firing rates
-# fig, axs = plt.subplots(1, 1)
-# for BMTK_id, times in spike_data_BMTK_ids.items():
-#     num_spikes = len(times)
-#     period_length = num_steps / 1e6  # s
-#     firing_rate = num_spikes / period_length
-
-#     axs.plot(BMTK_id, firing_rate, "k.")
-
-# axs.set_ylabel("Firing Rate (hz)")
-# axs.set_xlabel("node_id")
-# plt.show()
-
-
-# # Plot voltage
-# import matplotlib.pyplot as plt
-
-# fig, axs = plt.subplots(1, 1)
-
-# # GeNN
-# axs.set_ylabel("mV")
-# axs.set_xlabel("ms")
-
-# for k in data.keys():
-
-#     V = data[k]["V"]
-#     num_neurons, num_steps = V.shape
-#     num_neurons = 1
-#     t = np.arange(0, num_steps) * sim_config["run"]["dt"]
-#     t = np.repeat(t.reshape(1, -1), num_neurons, axis=0)
-
-#     for i in range(num_neurons):
-#         axs.plot(t[i, :], V[i, :], label="GeNN")
-# plt.show()
 
 print("Simulation complete.")

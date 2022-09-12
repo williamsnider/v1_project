@@ -11,8 +11,7 @@ GLIF3_dynamics_file = Path("593618144_glif_lif_asc_psc.json")
 SYN_PATH = Path("./point_1glifs/network/lgn_v1_edge_types.csv")
 LGN_SPIKES_PATH = Path("./point_1glifs/inputs/lgn_spikes.h5")
 
-# TODO: Resolve difference in voltage during refractory period; BMTK rounds down to third decimal? This causes problems when many spikes occur at the same time.
-# This has V_reset, different than GLIF3 in GLIF_models.py
+
 GLIF3 = pygenn.genn_model.create_custom_neuron_class(
     "GLIF3",
     param_names=[
@@ -147,6 +146,7 @@ dynamics_params_renamed = {
     "asc_decay_rates_2": asc_decay_rates[1],
     "asc_refractory_decay_rates_1": asc_refractory_decay_rates[0],
     "asc_refractory_decay_rates_2": asc_refractory_decay_rates[1],
+    "tau": dynamics_params["tau_syn"][0],
 }
 
 params = {k: dynamics_params_renamed[k] for k in GLIF3.get_param_names()}

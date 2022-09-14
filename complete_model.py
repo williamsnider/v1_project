@@ -18,6 +18,7 @@ from utilities import (
     add_model_name_to_df,
     add_GeNN_id,
 )
+import pickle
 
 DYNAMICS_BASE_DIR = Path("./GLIF Network/models/cell_models/nest_2.14_models")
 SIM_CONFIG_PATH = Path("./GLIF Network/config.json")
@@ -84,7 +85,7 @@ model.dT = sim_config["run"]["dt"]
 ### Construct v1 neuron populations ###
 v1_node_types_df = pd.read_csv(V1_NODE_CSV, sep=" ")
 v1_nodes = v1_net.nodes["v1"]
-v1_dynamics_files = v1_node_types_df["dynamics_params"].to_list()
+# v1_dynamics_files = v1_node_types_df["dynamics_params"].to_list()
 
 # # Add model names column to handle duplicate pop_names (with different dynamics params)
 # model_column = ["_" for _ in range(v1_node_types_df.shape[0])]
@@ -116,15 +117,50 @@ v1_dynamics_files = v1_node_types_df["dynamics_params"].to_list()
 # for i, type_id in enumerate(np.unique(v1_nodes.type_ids)):
 #     v1_node_dict[type_id] = [n for n in v1_nodes.filter(node_type_id=type_id)]
 
-v1_node_df = v1_nodes.to_dataframe()
+v1_node_df_path = Path("./pkl_data/v1_node_df.pkl")
+if v1_node_df_path.exists():
+    with open(v1_node_df_path, "rb") as f:
+        v1_node_df = pickle.load(f)
+else:
+    v1_node_df = v1_nodes.to_dataframe()
 
-# Add model_name column to account for duplicate pop_names (which have different dynamics_parameters)
+    # Add model_name column to account for duplicate pop_names (which have different dynamics_parameters)
+    v1_node_df = add_model_name_to_df(v1_node_df)
 
+    # Add GeNN id
+    v1_node_df = add_GeNN_id(v1_node_df)
 
-v1_node_df = add_model_name_to_df(v1_node_df)
+    # Improve memory of node_df
+    v1_node_df.drop(
+        columns=[
+            "model_template",
+            "model_type",
+            "tuning_angle",
+            "x",
+            "y",
+            "z",
+            "gaba_synapse",
+        ],
+        inplace=True,
+    )
+    for k in [
+        "dynamics_params",
+        "pop_name",
+        "model_name",
+        "population",
+        "location",
+        "ei",
+        "model_name",
+    ]:
+        v1_node_df[k] = v1_node_df[k].astype("category")
+
+    # Save as pickle
+    if v1_node_df_path.parent.exists() == False:
+        Path.mkdir(v1_node_df_path.parent, parents=True)
+
+    with open(v1_node_df_path, "wb") as f:
+        pickle.dump(v1_node_df, f)
 v1_model_names = v1_node_df["model_name"].unique()
-
-v1_node_df = add_GeNN_id(v1_node_df)
 
 
 # Add populations
@@ -146,9 +182,26 @@ for k in pop_dict.keys():
 
 ### Construct LGN neuron populations ###
 # lgn_node_types_df = pd.read_csv(LGN_NODE_DIR, sep=" ")
-lgn_nodes = lgn_net.nodes["lgn"]
-lgn_node_df = lgn_nodes.to_dataframe()
-lgn_node_df = add_model_name_to_df(lgn_node_df)
+
+lgn_node_df_path = Path("./pkl_data/lgn_node_df.pkl")
+if lgn_node_df_path.exists():
+    with open(lgn_node_df_path, "rb") as f:
+        lgn_node_df = pickle.load(f)
+else:
+    lgn_nodes = lgn_net.nodes["lgn"]
+    lgn_node_df = lgn_nodes.to_dataframe()
+
+    # Add model_name column to account for duplicate pop_names (which have different dynamics_parameters)
+    lgn_node_df = add_model_name_to_df(lgn_node_df)
+    lgn_model_names = lgn_node_df["model_name"].unique()
+
+    # Save as pickle
+    if v1_node_df_path.parent.exists() == False:
+        Path.mkdir(lgn_node_df_path.parent, parents=True)
+
+    with open(lgn_node_df_path, "wb") as f:
+        pickle.dump(lgn_node_df, f)
+
 lgn_model_names = lgn_node_df["model_name"].unique()
 
 # lgn_model_names = lgn_node_types_df["model_type"].to_list()
@@ -159,16 +212,46 @@ lgn_model_names = lgn_node_df["model_name"].unique()
 #     ]
 #     lgn_node_dict[lgn_model_names[i]] = nodes_with_model_name
 
-# Read LGN spike times
-spikes = SpikeTrains.from_sonata(LGN_SPIKES_PATH)
-spikes_df = spikes.to_dataframe()
-lgn_spiking_nodes = spikes_df["node_ids"].unique().tolist()
-spikes_list = []
-for n in lgn_spiking_nodes:
-    spikes_list.append(spikes_df[spikes_df["node_ids"] == n]["timestamps"].to_list())
-start_spike, end_spike, spike_times = spikes_list_to_start_end_times(
-    spikes_list
-)  # Convert to GeNN format
+spikes_path = Path("./pkl_data/spikes.pkl")
+if spikes_path.exists():
+    with open(spikes_path, "rb") as f:
+        spikes = pickle.load(f)
+else:
+    spikes_from_sonata = SpikeTrains.from_sonata(LGN_SPIKES_PATH)
+    spikes_df = spikes_from_sonata.to_dataframe()
+
+    lgn_spiking_nodes = spikes_df["node_ids"].unique().tolist()
+    spikes_list = []
+    for n in lgn_spiking_nodes:
+        spikes_list.append(
+            spikes_df[spikes_df["node_ids"] == n]["timestamps"].to_list()
+        )
+    start_spike, end_spike, spike_times = spikes_list_to_start_end_times(
+        spikes_list
+    )  # Convert to GeNN format
+
+    # Group into one list
+    spikes = [start_spike, end_spike, spike_times]
+
+    # Save as pickle
+    if spikes_path.parent.exists() == False:
+        Path.mkdir(spikes_path.parent, parents=True)
+
+    with open(spikes_path, "wb") as f:
+        pickle.dump(spikes, f)
+
+(start_spike, end_spike, spike_times) = spikes
+
+# # Read LGN spike times
+# spikes = SpikeTrains.from_sonata(LGN_SPIKES_PATH)
+# spikes_df = spikes.to_dataframe()
+# lgn_spiking_nodes = spikes_df["node_ids"].unique().tolist()
+# spikes_list = []
+# for n in lgn_spiking_nodes:
+#     spikes_list.append(spikes_df[spikes_df["node_ids"] == n]["timestamps"].to_list())
+# start_spike, end_spike, spike_times = spikes_list_to_start_end_times(
+#     spikes_list
+# )  # Convert to GeNN format
 
 # Add population
 for i, lgn_model_name in enumerate(lgn_model_names):
@@ -218,71 +301,226 @@ syn_dict = {}
 # for k in v1_pop_counts.keys():
 #     v1_pop_counts[k] += 1
 
-# Add connections (synapses) between popluations
-v1_edges = v1_net.edges["v1_to_v1"]
-v1_edge_df = v1_edges.groups[0].to_dataframe()
 
-# Add source, target
-v1_edge_df["source_model_name"] = "_"
-v1_edge_df["target_model_name"] = "_"
-v1_edge_df["source_GeNN_id"] = "_"
-v1_edge_df["target_GeNN_id"] = "_"
+v1_edge_df_path = Path("./pkl_data/v1_edge_df.pkl")
+if v1_edge_df_path.exists():
+    with open(v1_edge_df_path, "rb") as f:
+        v1_edge_df = pickle.load(f)
+else:
+
+    # Add connections (synapses) between popluations
+    v1_edges = v1_net.edges["v1_to_v1"]
+    v1_edge_df = v1_edges.groups[0].to_dataframe()
+    num_edges = len(v1_edge_df)
+
+    # Remove unused columns only for memory efficiency
+    v1_edge_df.drop(
+        columns=[
+            "target_query",
+            "source_query",
+            "weight_function",
+            "weight_sigma",
+            "dynamics_params",
+            "model_template",
+        ],
+        inplace=True,
+    )
+
+    v1_edge_df["source_GeNN_id"] = (
+        v1_node_df["GeNN_id"]
+        .iloc[v1_edge_df["source_node_id"]]
+        .astype("int32")
+        .tolist()
+    )
+    v1_edge_df["target_GeNN_id"] = (
+        v1_node_df["GeNN_id"]
+        .iloc[v1_edge_df["target_node_id"]]
+        .astype("int32")
+        .tolist()
+    )
+    v1_edge_df["source_model_name"] = (
+        v1_node_df["model_name"].iloc[v1_edge_df["source_node_id"]].tolist()
+    )
+    v1_edge_df["target_model_name"] = (
+        v1_node_df["model_name"].iloc[v1_edge_df["target_node_id"]].tolist()
+    )
+
+    # Convert to categorical to save memory
+    for k in ["source_model_name", "target_model_name", "nsyns"]:
+        v1_edge_df[k] = v1_edge_df[k].astype("category")
+
+    # Downcast to save memory
+    for k in [
+        "edge_type_id",
+        "source_node_id",
+        "target_node_id",
+        "source_GeNN_id",
+        "target_GeNN_id",
+    ]:
+        v1_edge_df[k] = pd.to_numeric(v1_edge_df[k], downcast="unsigned")
+
+    for k in ["delay", "syn_weight"]:
+        v1_edge_df[k] = pd.to_numeric(v1_edge_df[k], downcast="float")
+
+    # Save as pickle
+    if v1_edge_df_path.parent.exists() == False:
+        Path.mkdir(v1_edge_df_path.parent, parents=True)
+
+    with open(v1_edge_df_path, "wb") as f:
+        pickle.dump(v1_edge_df, f)
+
+    # for i, node_id in enumerate(node_df["node_id"].tolist()):
+    #     node_id = np.array(node_id, dtype="uint64")
+    #     GeNN_id = node_df.loc[node_df["node_id"] == node_id, "GeNN_id"].iloc[0]
+    #     node_model_name = node_df.loc[node_df["node_id"] == node_id, "model_name"].iloc[0]
+    #     # TODO: Why is this crashing
+    #     edge_df.loc[
+    #         edge_df["source_node_id"] == node_id, "source_model_name"
+    #     ] = node_model_name
+    #     edge_df.loc[edge_df["source_node_id"] == node_id, "source_GeNN_id"] = GeNN_id
+    #     edge_df.loc[
+    #         edge_df["target_node_id"] == node_id, "target_model_name"
+    #     ] = node_model_name
+    #     edge_df.loc[edge_df["target_node_id"] == node_id, "target_GeNN_id"] = GeNN_id
+    #     # print progress
+    #     if i % 10 == 0:
+    #         print("Progress: {}%".format(np.round(i / num_edges * 100, 10)), end="\r")
+    # Mapping from BMTK node_id to GeNN model name and GeNN
+
+
+# v1_edge_df = construct_id_conversion_df(
+#     edges=v1_edges,
+#     all_model_names=v1_model_names,
+#     source_node_to_pop_idx_dict=v1_node_to_pop_idx,
+#     target_node_to_pop_idx_dict=v1_node_to_pop_idx,
+#     filename=V1_ID_CONVERSION_FILENAME,
+# )
+# v1_syn_df = pd.read_csv(V1_EDGE_CSV, sep=" ")
+# v1_edge_type_ids = v1_syn_df["edge_type_id"].tolist()
+# v1_all_nsyns = v1_edge_df["nsyns"].unique()
+# v1_all_nsyns.sort()
+# def generate_source_target_df(node_df):
+edge_df = v1_edge_df
+source_model_names = edge_df["source_model_name"].unique().tolist()
+target_model_names = edge_df["target_model_name"].unique().tolist()
+all_model_names = list(set(source_model_names) | set(target_model_names))
+# for pop1 in all_model_names:
+#     for pop2 in all_model_names:
+
+#         src_tgt_path = Path("./pkl_data/src_tgt/{}_{}.pkl".format(pop1, pop2))
+#         if src_tgt_path.exists() == False:
+#             src_tgt = edge_df.loc[
+#                 (edge_df["source_model_name"] == pop1)
+#                 & (edge_df["target_model_name"] == pop2)
+#             ]
+#         # Save as pickle
+#         if src_tgt_path.parent.exists() == False:
+#             Path.mkdir(src_tgt_path.parent, parents=True)
+
+#         with open(src_tgt_path, "wb") as f:
+#             pickle.dump(src_tgt, f)
+
+
+def make_src_tgt_df(arg_list):
+    (pop1, pop2, edge_df) = arg_list
+    src_tgt = edge_df.loc[
+        (edge_df["source_model_name"] == pop1) & (edge_df["target_model_name"] == pop2)
+    ]
+    # Save as pickle
+    if src_tgt_path.parent.exists() == False:
+        Path.mkdir(src_tgt_path.parent, parents=True)
+
+    with open(src_tgt_path, "wb") as f:
+        pickle.dump(src_tgt, f)
+
+    print(src_tgt_path)
+
+
+import multiprocessing
+
+items = []
+for pop1 in all_model_names:
+    for pop2 in all_model_names:
+        src_tgt_path = Path("./pkl_data/src_tgt/{}_{}.pkl".format(pop1, pop2))
+        if src_tgt_path.exists() == False:
+            items.append(pop1, pop2, edge_df)
+
+with multiprocessing.Pool() as pool:
+    pool.map(make_src_tgt_df, items)
+
+
+df = edge_df.drop_duplicates(
+    subset=["edge_type_id", "nsyns", "source_model_name", "target_model_name"]
+)
+# Add DT
+df["DT"] = sim_config["run"]["dt"]
+df["dynamics_path"] = "_"
+
+# Add dynamics file
+for i in range(len(df)):
+    if i % 1000 == 0:
+        print(i)
+    target = df.iloc[0]["target_model_name"]
+    dynamics_file = v1_node_df.loc[v1_node_df["model_name"] == target][
+        "dynamics_params"
+    ].iloc[0]
+    dynamics_file = dynamics_file.replace("config", "psc")
+    dynamics_path = Path(DYNAMICS_BASE_DIR, dynamics_file)
+    df["dynamics_path"].iloc[0] = dynamics_path
+items = df[
+    [
+        "source_model_name",
+        "target_model_name",
+        "edge_type_id",
+        "nsyns",
+        "DT",
+        "dynamics_path",
+    ]
+].to_numpy()
+#
+
+
+from utilities import make_synapse_data
+
+with multiprocessing.Pool() as pool:
+    pool.map(make_synapse_data, items)
+
+# all_pop_names = set(
+#     edge_df["source_model_name"].unique().tolist()
+#     + edge_df["target_model_name"].unique().tolist(),
+# )
+
 
 node_df = v1_node_df
-edge_df = v1_edge_df
-num_edges = len(edge_df)
-for i, node_id in enumerate(node_df["node_id"]):
-
-    GeNN_id = node_df.loc[node_df["node_id"] == node_id, "GeNN_id"][0]
-    node_model_name = node_df.loc[node_df["node_id"] == node_id, "model_name"][0]
-
-    # TODO: Why is this crashing
-    edge_df.loc[
-        edge_df["source_node_id"] == node_id, "source_model_name"
-    ] = node_model_name
-    edge_df.loc[edge_df["source_node_id"] == node_id, "source_GeNN_id"] = GeNN_id
-
-    edge_df.loc[
-        edge_df["target_node_id"] == node_id, "target_model_name"
-    ] = node_model_name
-    edge_df.loc[edge_df["target_node_id"] == node_id, "target_GeNN_id"] = GeNN_id
-
-    # print progress
-    if i % 1000 == 0:
-        print("Progress: {}%".format(np.round(i / num_edges * 100, 1)), end="\r")
-
-
-v1_edge_df = construct_id_conversion_df(
-    edges=v1_edges,
-    all_model_names=v1_model_names,
-    source_node_to_pop_idx_dict=v1_node_to_pop_idx,
-    target_node_to_pop_idx_dict=v1_node_to_pop_idx,
-    filename=V1_ID_CONVERSION_FILENAME,
-)
-v1_syn_df = pd.read_csv(V1_EDGE_CSV, sep=" ")
-v1_edge_type_ids = v1_syn_df["edge_type_id"].tolist()
-v1_all_nsyns = v1_edge_df["nsyns"].unique()
-v1_all_nsyns.sort()
-
+count = -1
 for pop1 in v1_model_names:
     for pop2 in v1_model_names:
 
-        dynamics_params, _ = get_dynamics_params(
-            node_types_df=v1_node_types_df,
-            dynamics_base_dir=DYNAMICS_BASE_DIR,
-            sim_config=sim_config,
-            node_dict=v1_node_dict,
-            model_name=pop2,  # Pop2 is target, used for dynamics_params (tau)
+        # Print progress
+        count += 1
+        print(
+            "Progress = {}% - {} to {}".format(
+                np.round(100 * count / len(v1_model_names) ** 2, 4), pop1, pop2
+            ),
+            end="\r",
         )
+
+        dynamics_file = node_df.loc[node_df["model_name"] == pop2][
+            "dynamics_params"
+        ].unique()
+        assert len(dynamics_file) == 1
+        dynamics_file = dynamics_file[0]
+        dynamics_file = dynamics_file.replace("config", "psc")
+        dynamics_path = Path(DYNAMICS_BASE_DIR, dynamics_file)
+
+        dynamics_params = get_dynamics_params(dynamics_path, sim_config)
+
         syn_dict = construct_synapses(
             model=model,
             syn_dict=syn_dict,
             pop1=pop1,
             pop2=pop2,
-            all_edge_type_ids=v1_edge_type_ids,
-            all_nsyns=v1_all_nsyns,
             edge_df=v1_edge_df,
-            syn_df=v1_syn_df,
             sim_config=sim_config,
             dynamics_params=dynamics_params,
         )

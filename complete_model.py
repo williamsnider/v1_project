@@ -17,6 +17,7 @@ from utilities import (
     construct_id_conversion_df,
     add_model_name_to_df,
     add_GeNN_id,
+    construct_synapses_by_path,
 )
 import pickle
 
@@ -80,7 +81,8 @@ print("Contains edges: {}".format(lgn_net.has_edges))
 with open(SIM_CONFIG_PATH) as f:
     sim_config = json.load(f)
 model = pygenn.genn_model.GeNNModel(backend="CUDA")
-model.dT = sim_config["run"]["dt"]
+DT = sim_config["run"]["dt"]
+model.dT = DT
 
 ### Construct v1 neuron populations ###
 v1_node_types_df = pd.read_csv(V1_NODE_CSV, sep=" ")
@@ -170,9 +172,8 @@ pop_dict = construct_populations(
     pop_dict,
     all_model_names=v1_model_names,
     dynamics_base_dir=DYNAMICS_BASE_DIR,
-    node_types_df=v1_node_types_df,
     neuron_class=GLIF3,
-    sim_config=sim_config,
+    DT=DT,
     node_df=v1_node_df,
 )
 
@@ -423,10 +424,12 @@ all_model_names = list(set(source_model_names) | set(target_model_names))
 
 def make_src_tgt_df(arg_list):
     (pop1, pop2, edge_df) = arg_list
+
     src_tgt = edge_df.loc[
         (edge_df["source_model_name"] == pop1) & (edge_df["target_model_name"] == pop2)
     ]
     # Save as pickle
+    src_tgt_path = Path("./pkl_data/src_tgt/{}_{}.pkl".format(pop1, pop2))
     if src_tgt_path.parent.exists() == False:
         Path.mkdir(src_tgt_path.parent, parents=True)
 
@@ -443,7 +446,8 @@ for pop1 in all_model_names:
     for pop2 in all_model_names:
         src_tgt_path = Path("./pkl_data/src_tgt/{}_{}.pkl".format(pop1, pop2))
         if src_tgt_path.exists() == False:
-            items.append(pop1, pop2, edge_df)
+            arg_list = [pop1, pop2, edge_df]
+            items.append(arg_list)
 
 with multiprocessing.Pool() as pool:
     pool.map(make_src_tgt_df, items)
@@ -453,20 +457,35 @@ df = edge_df.drop_duplicates(
     subset=["edge_type_id", "nsyns", "source_model_name", "target_model_name"]
 )
 # Add DT
-df["DT"] = sim_config["run"]["dt"]
-df["dynamics_path"] = "_"
 
-# Add dynamics file
-for i in range(len(df)):
-    if i % 1000 == 0:
-        print(i)
-    target = df.iloc[0]["target_model_name"]
+df["DT"] = DT
+
+for target in df["target_model_name"].unique():
+
+    # Load dynamics_params
     dynamics_file = v1_node_df.loc[v1_node_df["model_name"] == target][
         "dynamics_params"
     ].iloc[0]
     dynamics_file = dynamics_file.replace("config", "psc")
     dynamics_path = Path(DYNAMICS_BASE_DIR, dynamics_file)
-    df["dynamics_path"].iloc[0] = dynamics_path
+    dynamics_params = get_dynamics_params(dynamics_path, DT)
+    tau = dynamics_params["tau"]
+
+    # Assign to matching edges
+    df.loc[df["target_model_name"] == target, ("tau")] = tau
+
+
+# # Add dynamics file
+# for i in range(len(df)):
+#     if i % 1000 == 0:
+#         print(i)
+#     target = df.iloc[0]["target_model_name"]
+#     dynamics_file = v1_node_df.loc[v1_node_df["model_name"] == target][
+#         "dynamics_params"
+#     ].iloc[0]
+#     dynamics_file = dynamics_file.replace("config", "psc")
+#     dynamics_path = Path(DYNAMICS_BASE_DIR, dynamics_file)
+#     df["dynamics_path"].iloc[0] = dynamics_path
 items = df[
     [
         "source_model_name",
@@ -474,7 +493,7 @@ items = df[
         "edge_type_id",
         "nsyns",
         "DT",
-        "dynamics_path",
+        "tau",
     ]
 ].to_numpy()
 #
@@ -491,179 +510,170 @@ with multiprocessing.Pool() as pool:
 # )
 
 
-node_df = v1_node_df
-count = -1
-for pop1 in v1_model_names:
-    for pop2 in v1_model_names:
+# node_df = v1_node_df
+# count = -1
+# all_nsyns = edge_df["nsyns"].unique()
+# all_edge_type_ids = edge_df["edge_type_id"].unique()
+# for pop1 in v1_model_names:
+#     for pop2 in v1_model_names:
 
-        # Print progress
-        count += 1
+#         # Print progress
+#         count += 1
+#         print(
+#             "Progress = {}% - {} to {}".format(
+#                 np.round(100 * count / len(v1_model_names) ** 2, 4), pop1, pop2
+#             ),
+#             end="\r",
+#         )
+
+#         syn_dict = construct_synapses(
+#             model=model,
+#             syn_dict=syn_dict,
+#             pop1=pop1,
+#             pop2=pop2,
+#             all_nsyns=all_nsyns,
+#             all_edge_type_ids=all_edge_type_ids,
+#         )
+
+all_synapse_paths = list(Path("./pkl_data/synapses/").iterdir())
+num_paths = len(all_synapse_paths)
+for i, synapse_path in enumerate(all_synapse_paths):
+
+    # Print progress
+    if i % 1000 == 0:
         print(
-            "Progress = {}% - {} to {}".format(
-                np.round(100 * count / len(v1_model_names) ** 2, 4), pop1, pop2
-            ),
+            "Progress = {}%".format(np.round(100 * i / num_paths, 4)),
             end="\r",
         )
+    construct_synapses_by_path(syn_dict, model, synapse_path)
 
-        dynamics_file = node_df.loc[node_df["model_name"] == pop2][
-            "dynamics_params"
-        ].unique()
-        assert len(dynamics_file) == 1
-        dynamics_file = dynamics_file[0]
-        dynamics_file = dynamics_file.replace("config", "psc")
-        dynamics_path = Path(DYNAMICS_BASE_DIR, dynamics_file)
 
-        dynamics_params = get_dynamics_params(dynamics_path, sim_config)
+# ### Construct LGN to v1 synapses ###
+# # First create a dict that maps the NEST node_id to the GeNN node_id. NEST numbers the neurons from 0 to num_neurons, whereas GeNN numbers neurons 0 to num_neurons_per_population. This matters when assigning synapses.
+# lgn_node_to_pop_idx = {}
+# lgn_pop_counts = {}
+# for n in lgn_nodes:
+#     model_name = n["model_type"]
+#     if model_name in lgn_pop_counts.keys():
+#         lgn_pop_counts[model_name] += 1
+#     else:
+#         lgn_pop_counts[model_name] = 0
+#     pop_idx = lgn_pop_counts[model_name]
+#     node_id = n["node_id"]
+#     lgn_node_to_pop_idx[node_id] = [model_name, pop_idx]
 
-        syn_dict = construct_synapses(
-            model=model,
-            syn_dict=syn_dict,
-            pop1=pop1,
-            pop2=pop2,
-            edge_df=v1_edge_df,
-            sim_config=sim_config,
-            dynamics_params=dynamics_params,
-        )
+# # +1 so that pop_counts == num_neurons
+# for k in lgn_pop_counts.keys():
+#     lgn_pop_counts[k] += 1
 
-### Construct LGN to v1 synapses ###
-# First create a dict that maps the NEST node_id to the GeNN node_id. NEST numbers the neurons from 0 to num_neurons, whereas GeNN numbers neurons 0 to num_neurons_per_population. This matters when assigning synapses.
-lgn_node_to_pop_idx = {}
-lgn_pop_counts = {}
-for n in lgn_nodes:
-    model_name = n["model_type"]
-    if model_name in lgn_pop_counts.keys():
-        lgn_pop_counts[model_name] += 1
-    else:
-        lgn_pop_counts[model_name] = 0
-    pop_idx = lgn_pop_counts[model_name]
-    node_id = n["node_id"]
-    lgn_node_to_pop_idx[node_id] = [model_name, pop_idx]
-
-# +1 so that pop_counts == num_neurons
-for k in lgn_pop_counts.keys():
-    lgn_pop_counts[k] += 1
-
-# Add connections (synapses) between popluations
-lgn_edges = lgn_net.edges["lgn_to_v1"].get_group(0)
-lgn_edge_df = construct_id_conversion_df(
-    edges=lgn_edges,
-    all_model_names=v1_model_names,
-    source_node_to_pop_idx_dict=lgn_node_to_pop_idx,
-    target_node_to_pop_idx_dict=v1_node_to_pop_idx,
-    filename=LGN_ID_CONVERSION_FILENAME,
-)
-
-lgn_syn_df = pd.read_csv(LGN_V1_EDGE_CSV, sep=" ")
-lgn_edge_type_ids = lgn_syn_df["edge_type_id"].tolist()
-lgn_all_nsyns = lgn_edge_df["nsyns"].unique()
-lgn_all_nsyns.sort()
-for pop1 in lgn_model_names:
-    for pop2 in v1_model_names:
-
-        # Dynamics for v1, since this is the target
-        dynamics_params, _ = get_dynamics_params(
-            node_types_df=v1_node_types_df,
-            dynamics_base_dir=DYNAMICS_BASE_DIR,
-            sim_config=sim_config,
-            node_dict=v1_node_dict,
-            model_name=pop2,  # Pop2 is target, used for dynamics_params (tau)
-        )
-        syn_dict = construct_synapses(
-            model=model,
-            syn_dict=syn_dict,
-            pop1=pop1,
-            pop2=pop2,
-            all_edge_type_ids=lgn_edge_type_ids,
-            all_nsyns=lgn_all_nsyns,
-            edge_df=lgn_edge_df,
-            syn_df=lgn_syn_df,
-            sim_config=sim_config,
-            dynamics_params=dynamics_params,
-        )
-
-### Construct BKG to v1 synapses ###
-
-# Test BKG working with connection to all v1 with same weights
-# Get delay and weight specific to the edge_type_id
-delay_steps = int(1.0 / sim_config["run"]["dt"])  # delay (ms) -> delay (steps)
-nsyns = 21
-weight = 0.192834123607 / 1e3 * nsyns  # nS -> uS; multiply by number of synapses
-s_ini = {"g": weight}
-psc_Alpha_params = {"tau": dynamics_params["tau"]}  # TODO: Always 0th port?
-psc_Alpha_init = {"x": 0.0}
-pop1 = BKG_name
-for pop2 in v1_model_names:
-    synapse_group_name = pop1 + "_to_" + pop2 + "_nsyns_" + str(nsyns)
-    syn_dict[synapse_group_name] = model.add_synapse_population(
-        pop_name=synapse_group_name,
-        matrix_type="SPARSE_GLOBALG_INDIVIDUAL_PSM",
-        delay_steps=delay_steps,
-        source=pop1,
-        target=pop2,
-        w_update_model="StaticPulse",
-        wu_param_space={},
-        wu_var_space=s_ini,
-        wu_pre_var_space={},
-        wu_post_var_space={},
-        postsyn_model=psc_Alpha,
-        ps_param_space=psc_Alpha_params,
-        ps_var_space=psc_Alpha_init,
-    )
-
-    t_list = [i for i in range(pop_dict[pop2].size)]
-    s_list = [0 for i in t_list]
-    syn_dict[synapse_group_name].set_sparse_connections(
-        np.array(s_list), np.array(t_list)
-    )
-    print("Synapses added for {} -> {} with nsyns={}".format(pop1, pop2, nsyns))
-
-### This commented out section is hard to run on this smaller dataset of 450 neurons because there is no bkg_nodes.h5 file for this dataset. Trying to copy the one from the Billeh dataset doesn't work, as it uses populations of neurons with different names.
-# bkg_node_to_pop_idx = {0: [BKG_name, 0]}
-# bkg_edges = bkg_net.edges["bkg_to_v1"].get_group(0)
-# bkg_edge_df = construct_id_conversion_df(
-#     edges=bkg_edges,
+# # Add connections (synapses) between popluations
+# lgn_edges = lgn_net.edges["lgn_to_v1"].get_group(0)
+# lgn_edge_df = construct_id_conversion_df(
+#     edges=lgn_edges,
 #     all_model_names=v1_model_names,
-#     source_node_to_pop_idx_dict=bkg_node_to_pop_idx,
+#     source_node_to_pop_idx_dict=lgn_node_to_pop_idx,
 #     target_node_to_pop_idx_dict=v1_node_to_pop_idx,
-#     filename=BKG_ID_CONVERSION_FILENAME,
+#     filename=LGN_ID_CONVERSION_FILENAME,
 # )
 
+# lgn_syn_df = pd.read_csv(LGN_V1_EDGE_CSV, sep=" ")
+# lgn_edge_type_ids = lgn_syn_df["edge_type_id"].tolist()
+# lgn_all_nsyns = lgn_edge_df["nsyns"].unique()
+# lgn_all_nsyns.sort()
+# for pop1 in lgn_model_names:
+#     for pop2 in v1_model_names:
+
+#         syn_dict = construct_synapses(
+#             model=model,
+#             syn_dict=syn_dict,
+#             pop1=pop1,
+#             pop2=pop2,
+#             edge_df=v1_edge_df,
+#         )
+
+# ### Construct BKG to v1 synapses ###
+
+# # Test BKG working with connection to all v1 with same weights
+# # Get delay and weight specific to the edge_type_id
+# delay_steps = int(1.0 / sim_config["run"]["dt"])  # delay (ms) -> delay (steps)
+# nsyns = 21
+# weight = 0.192834123607 / 1e3 * nsyns  # nS -> uS; multiply by number of synapses
+# s_ini = {"g": weight}
+# psc_Alpha_params = {"tau": dynamics_params["tau"]}  # TODO: Always 0th port?
+# psc_Alpha_init = {"x": 0.0}
 # pop1 = BKG_name
-# bkg_syn_df = pd.read_csv(BKG_V1_EDGE_CSV, sep=" ")
-# bkg_edge_type_ids = bkg_syn_df["edge_type_id"].tolist()
-# bkg_all_nsyns = bkg_edge_df["nsyns"].unique()
-# bkg_all_nsyns.sort()
-
 # for pop2 in v1_model_names:
+#     synapse_group_name = pop1 + "_to_" + pop2 + "_nsyns_" + str(nsyns)
+#     syn_dict[synapse_group_name] = model.add_synapse_population(
+#         pop_name=synapse_group_name,
+#         matrix_type="SPARSE_GLOBALG_INDIVIDUAL_PSM",
+#         delay_steps=delay_steps,
+#         source=pop1,
+#         target=pop2,
+#         w_update_model="StaticPulse",
+#         wu_param_space={},
+#         wu_var_space=s_ini,
+#         wu_pre_var_space={},
+#         wu_post_var_space={},
+#         postsyn_model=psc_Alpha,
+#         ps_param_space=psc_Alpha_params,
+#         ps_var_space=psc_Alpha_init,
+#     )
 
-#     # Dynamics for v1, since this is the target
-#     dynamics_params, _ = get_dynamics_params(
-#         node_types_df=v1_node_types_df,
-#         dynamics_base_dir=DYNAMICS_BASE_DIR,
-#         sim_config=sim_config,
-#         node_dict=v1_node_dict,
-#         model_name=pop2,  # Pop2 is target, used for dynamics_params (tau)
+#     t_list = [i for i in range(pop_dict[pop2].size)]
+#     s_list = [0 for i in t_list]
+#     syn_dict[synapse_group_name].set_sparse_connections(
+#         np.array(s_list), np.array(t_list)
 #     )
-#     syn_dict = construct_synapses(
-#         model=model,
-#         syn_dict=syn_dict,
-#         pop1=pop1,
-#         pop2=pop2,
-#         all_edge_type_ids=bkg_edge_type_ids,
-#         all_nsyns=bkg_all_nsyns,
-#         edge_df=bkg_syn_df,
-#         syn_df=bkg_syn_df,
-#         sim_config=sim_config,
-#         dynamics_params=dynamics_params,
-#     )
+#     print("Synapses added for {} -> {} with nsyns={}".format(pop1, pop2, nsyns))
+
+# ### This commented out section is hard to run on this smaller dataset of 450 neurons because there is no bkg_nodes.h5 file for this dataset. Trying to copy the one from the Billeh dataset doesn't work, as it uses populations of neurons with different names.
+# # bkg_node_to_pop_idx = {0: [BKG_name, 0]}
+# # bkg_edges = bkg_net.edges["bkg_to_v1"].get_group(0)
+# # bkg_edge_df = construct_id_conversion_df(
+# #     edges=bkg_edges,
+# #     all_model_names=v1_model_names,
+# #     source_node_to_pop_idx_dict=bkg_node_to_pop_idx,
+# #     target_node_to_pop_idx_dict=v1_node_to_pop_idx,
+# #     filename=BKG_ID_CONVERSION_FILENAME,
+# # )
+
+# # pop1 = BKG_name
+# # bkg_syn_df = pd.read_csv(BKG_V1_EDGE_CSV, sep=" ")
+# # bkg_edge_type_ids = bkg_syn_df["edge_type_id"].tolist()
+# # bkg_all_nsyns = bkg_edge_df["nsyns"].unique()
+# # bkg_all_nsyns.sort()
+
+# # for pop2 in v1_model_names:
+
+# #     # Dynamics for v1, since this is the target
+# #     dynamics_params, _ = get_dynamics_params(
+# #         node_types_df=v1_node_types_df,
+# #         dynamics_base_dir=DYNAMICS_BASE_DIR,
+# #         sim_config=sim_config,
+# #         node_dict=v1_node_dict,
+# #         model_name=pop2,  # Pop2 is target, used for dynamics_params (tau)
+# #     )
+# #     syn_dict = construct_synapses(
+# #         model=model,
+# #         syn_dict=syn_dict,
+# #         pop1=pop1,
+# #         pop2=pop2,
+# #         all_edge_type_ids=bkg_edge_type_ids,
+# #         all_nsyns=bkg_all_nsyns,
+# #         edge_df=bkg_syn_df,
+# #         syn_df=bkg_syn_df,
+# #         sim_config=sim_config,
+# #         dynamics_params=dynamics_params,
+# #     )
 
 
 ### Run simulation ###
-model.build(force_rebuild=True)
+model.build(force_rebuild=False)
 model.load(
     num_recording_timesteps=NUM_RECORDING_TIMESTEPS
 )  # TODO: How big to calculate for GPU size?
-1
+
 
 # Construct data for spike times
 spike_data = {}

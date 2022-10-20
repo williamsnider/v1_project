@@ -54,17 +54,6 @@ lgn_net = File(
     ],
 )
 
-bkg_net = File(
-    data_files=[
-        "point_450glifs/network/test_bkg_nodes.h5",
-        "point_450glifs/network/test_bkg_v1_edges.h5",
-    ],
-    data_type_files=[
-        "point_450glifs/network/test_bkg_node_types.csv",
-        "point_450glifs/network/test_bkg_v1_edge_types.csv",
-    ],
-)
-
 print("Contains nodes: {}".format(v1_net.has_nodes))
 print("Contains edges: {}".format(v1_net.has_edges))
 print("Contains nodes: {}".format(lgn_net.has_nodes))
@@ -74,7 +63,7 @@ print("Contains edges: {}".format(lgn_net.has_edges))
 ### Create base model ###
 with open(SIM_CONFIG_PATH) as f:
     sim_config = json.load(f)
-model = pygenn.genn_model.GeNNModel(backend="CUDA")
+model = pygenn.genn_model.GeNNModel(backend="SingleThreadedCPU")
 model.dT = sim_config["run"]["dt"]
 
 ### Construct v1 neuron populations ###

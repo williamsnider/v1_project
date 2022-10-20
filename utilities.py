@@ -91,11 +91,10 @@ def spikes_list_to_start_end_times(spikes_list):
     return start_spike, end_spike, spike_times
 
 
-def get_dynamics_params(dynamics_path, sim_config):
+def get_dynamics_params(dynamics_path, DT):
     with open(dynamics_path) as f:
         old_dynamics_params = json.load(f)
 
-    DT = sim_config["run"]["dt"]
     asc_decay = np.array(old_dynamics_params["k"])
     r = np.array([1.0, 1.0])  # NEST default
     t_ref = old_dynamics_params["t_ref"]
@@ -137,9 +136,8 @@ def construct_populations(
     pop_dict,
     all_model_names,
     dynamics_base_dir,
-    node_types_df,
     neuron_class,
-    sim_config,
+    DT,
     node_df,
 ):
     all_model_names = node_df["model_name"].unique()
@@ -152,7 +150,7 @@ def construct_populations(
         dynamics_file = dynamics_file[0]
         dynamics_file = dynamics_file.replace("config", "psc")
         dynamics_path = Path(dynamics_base_dir, dynamics_file)
-        dynamics_params_renamed = get_dynamics_params(dynamics_path, sim_config)
+        dynamics_params_renamed = get_dynamics_params(dynamics_path, DT)
 
         params = {k: dynamics_params_renamed[k] for k in neuron_class.get_param_names()}
         init = {
@@ -176,18 +174,71 @@ def construct_populations(
     return pop_dict
 
 
-def construct_synapses(
-    model,
-    syn_dict,
-    pop1,
-    pop2,
-    edge_df,
-    sim_config,
-    dynamics_params,
-):
+def construct_synapses_by_path(syn_dict, model, pop1_pop2_edgetypeid_nsyns_path):
 
-    all_nsyns = edge_df["nsyns"].unique()
-    all_edge_type_ids = edge_df["edge_type_id"].unique()
+    if pop1_pop2_edgetypeid_nsyns_path.exists() == False:
+        return
+    else:
+        with open(pop1_pop2_edgetypeid_nsyns_path, "rb") as f:
+            data = pickle.load(f)
+
+        # Empty .pkl file indicates there are no synapses
+        if len(data) == 0:
+            return
+        else:
+            (
+                pop1,
+                pop2,
+                nsyns,
+                edge_type_id,
+                delay_steps,
+                weight,
+                s_list,
+                t_list,
+                tau,
+            ) = data
+
+        s_ini = {"g": weight}
+        psc_Alpha_params = {"tau": tau}  # TODO: Always 0th port?
+        psc_Alpha_init = {"x": 0.0}
+
+        synapse_group_name = (
+            pop1
+            + "_to_"
+            + pop2
+            + "_nsyns_"
+            + str(nsyns)
+            + "_edge_type_id_"
+            + str(edge_type_id)
+        )
+        syn_dict[synapse_group_name] = model.add_synapse_population(
+            pop_name=synapse_group_name,
+            matrix_type="SPARSE_GLOBALG_INDIVIDUAL_PSM",
+            delay_steps=delay_steps,
+            source=pop1,
+            target=pop2,
+            w_update_model="StaticPulse",
+            wu_param_space={},
+            wu_var_space=s_ini,
+            wu_pre_var_space={},
+            wu_post_var_space={},
+            postsyn_model=psc_Alpha,
+            ps_param_space=psc_Alpha_params,
+            ps_var_space=psc_Alpha_init,
+        )
+        syn_dict[synapse_group_name].set_sparse_connections(
+            np.array(s_list), np.array(t_list)
+        )
+
+        # print(
+        #     "Synapses added for {} -> {} with edge type id={} and nsyns={}".format(
+        #         pop1, pop2, edge_type_id, nsyns
+        #     )
+        # )
+    return syn_dict
+
+
+def construct_synapses(model, syn_dict, pop1, pop2, all_nsyns, all_edge_type_ids):
 
     for edge_type_id in all_edge_type_ids:
         for nsyns in all_nsyns:
@@ -197,51 +248,18 @@ def construct_synapses(
                     pop1, pop2, edge_type_id, nsyns
                 )
             )
-            if pop1_pop2_edgetypeid_nsyns_path.exists():
-                with open(pop1_pop2_edgetypeid_nsyns_path, "rb") as f:
-                    (
-                        pop1,
-                        pop2,
-                        nsyns,
-                        edge_type_id,
-                        delay_steps,
-                        weight,
-                        s_list,
-                        t_list,
-                    ) = pickle.load(f)
 
+            if pop1_pop2_edgetypeid_nsyns_path.exists() == False:
+                continue
+
+            with open(pop1_pop2_edgetypeid_nsyns_path, "rb") as f:
+                data = pickle.load(f)
+
+            # Empty .pkl file indicates there are no synapses
+            if len(data) == 0:
+                continue
             else:
-
-                src_tgt_path = Path("./pkl_data/src_tgt/{}_{}.pkl".format(pop1, pop2))
-                with open(src_tgt_path, "rb") as f:
-                    src_tgt = pickle.load(f)
-
-                # Filter by source, target (save as pkl to avoid searching full edge_df)
-                src_tgt_id_nsyns = src_tgt.loc[
-                    (src_tgt["nsyns"] == nsyns)
-                    & (src_tgt["edge_type_id"] == edge_type_id)
-                ]
-
-                # Convert to list for GeNN
-                s_list = src_tgt_id_nsyns[
-                    src_tgt_id_nsyns["source_model_name"] == pop1
-                ]["source_GeNN_id"].tolist()
-                t_list = src_tgt_id_nsyns[
-                    src_tgt_id_nsyns["target_model_name"] == pop2
-                ]["target_GeNN_id"].tolist()
-
-                # Skip if no synapses (typically only 1 edge_type_id relevant for each source)
-                if len(s_list) == 0:
-                    continue
-
-                # Get delay and weight specific to the edge_type_id
-                delay_steps = int(
-                    src_tgt_id_nsyns["delay"].iloc[0] / sim_config["run"]["dt"]
-                )  # delay (ms) -> delay (steps)
-                weight = src_tgt_id_nsyns["syn_weight"].iloc[0] / 1e3 * nsyns
-
-                # Save as pickle
-                data = [
+                (
                     pop1,
                     pop2,
                     nsyns,
@@ -250,15 +268,11 @@ def construct_synapses(
                     weight,
                     s_list,
                     t_list,
-                ]
-                if pop1_pop2_edgetypeid_nsyns_path.parent.exists() == False:
-                    Path.mkdir(pop1_pop2_edgetypeid_nsyns_path.parent, parents=True)
-
-                with open(pop1_pop2_edgetypeid_nsyns_path, "wb") as f:
-                    pickle.dump(data, f)
+                    tau,
+                ) = data
 
             s_ini = {"g": weight}
-            psc_Alpha_params = {"tau": dynamics_params["tau"]}  # TODO: Always 0th port?
+            psc_Alpha_params = {"tau": tau}  # TODO: Always 0th port?
             psc_Alpha_init = {"x": 0.0}
 
             synapse_group_name = (
@@ -485,7 +499,13 @@ def add_GeNN_id(node_df):
 
 def make_synapse_data(arg_list):
 
-    (pop1, pop2, edge_type_id, nsyns, DT, dynamics_path) = arg_list
+    (pop1, pop2, edge_type_id, nsyns, DT, tau) = arg_list
+
+    pop1_pop2_edgetypeid_nsyns_path = Path(
+        "./pkl_data/synapses/{}_{}_{}_{}.pkl".format(pop1, pop2, edge_type_id, nsyns)
+    )
+    if pop1_pop2_edgetypeid_nsyns_path.exists():
+        return
 
     src_tgt_path = Path("./pkl_data/src_tgt/{}_{}.pkl".format(pop1, pop2))
     with open(src_tgt_path, "rb") as f:
@@ -504,38 +524,29 @@ def make_synapse_data(arg_list):
         "target_GeNN_id"
     ].tolist()
 
-    # # Skip if no synapses (typically only 1 edge_type_id relevant for each source)
-    # if len(s_list) == 0:
+    # Skip if no synapses (typically only 1 edge_type_id relevant for each source), but save pickle file anyway as this is the flag to not re-process again
+    if len(s_list) == 0:
+        data = []
+    else:
 
-    # Get delay and weight specific to the edge_type_id
-    delay_steps = int(
-        src_tgt_id_nsyns["delay"].iloc[0] / DT
-    )  # delay (ms) -> delay (steps)
-    weight = src_tgt_id_nsyns["syn_weight"].iloc[0] / 1e3 * nsyns
+        # Get delay and weight specific to the edge_type_id
+        delay_steps = int(
+            src_tgt_id_nsyns["delay"].iloc[0] / DT
+        )  # delay (ms) -> delay (steps)
+        weight = src_tgt_id_nsyns["syn_weight"].iloc[0] / 1e3 * nsyns
 
-    # dynamics_file = node_df.loc[node_df["model_name"] == pop2][
-    #     "dynamics_params"
-    # ].unique()
-    # assert len(dynamics_file) == 1
-    # dynamics_file = dynamics_file[0]
-    # dynamics_file = dynamics_file.replace("config", "psc")
-    # dynamics_path = Path(DYNAMICS_BASE_DIR, dynamics_file)
-
-    dynamics_params = get_dynamics_params(dynamics_path, DT)
-    dynamics_params["tau"]
-
-    # Save as pickle
-    data = [
-        pop1,
-        pop2,
-        nsyns,
-        edge_type_id,
-        delay_steps,
-        weight,
-        s_list,
-        t_list,
-        tau,
-    ]
+        # Save as pickle
+        data = [
+            pop1,
+            pop2,
+            nsyns,
+            edge_type_id,
+            delay_steps,
+            weight,
+            s_list,
+            t_list,
+            tau,
+        ]
 
     pop1_pop2_edgetypeid_nsyns_path = Path(
         "./pkl_data/synapses/{}_{}_{}_{}.pkl".format(pop1, pop2, edge_type_id, nsyns)

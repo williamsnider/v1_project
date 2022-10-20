@@ -1,5 +1,3 @@
-# Replicate point_450glifs example with GeNN
-from pickletools import optimize
 import numpy as np
 import pandas as pd
 import json

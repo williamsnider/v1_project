@@ -75,7 +75,7 @@ var_names = [x.name for x in GLIF3.get_vars()]
 ### Create base model ###
 with open(SIM_CONFIG_PATH) as f:
     sim_config = json.load(f)
-model = pygenn.genn_model.GeNNModel(backend="SingleThreadedCPU")
+model = pygenn.genn_model.GeNNModel(backend="CUDA")
 DT = sim_config["run"]["dt"]
 model.dT = DT
 model._model.set_merge_postsynaptic_models(True)
